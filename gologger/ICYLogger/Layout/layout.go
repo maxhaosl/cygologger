@@ -1,0 +1,391 @@
+/*
+ * CYGoLogger License
+ * -----------
+ *
+ * CYGoLogger is licensed under the terms of the MIT license reproduced below.
+ * This means that CYGoLogger is free software and can be used for both academic
+ * and commercial purposes at absolutely no cost.
+ *
+ * ===============================================================================
+ *
+ * Copyright (C) 2023-2024 ShiLiang.Hao <newhaosl@163.com>, foobra<vipgs99@gmail.com>
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
+// Package layout provides layout implementations for formatting log messages.
+package Layout
+
+import (
+	"fmt"
+	"strings"
+	"sync"
+
+	"github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
+	"github.com/maxhaosl/CYGoLogger/ICYLogger/Filter"
+	"github.com/maxhaosl/CYGoLogger/ICYLogger/Common"
+)
+
+// CYLoggerTemplateLayoutEscape provides escape character handling for layouts.
+type CYLoggerTemplateLayoutEscape struct{}
+
+func (le *CYLoggerTemplateLayoutEscape) GetEscapeChar() rune {
+	return Common.LogEscapeChar
+}
+
+func (le *CYLoggerTemplateLayoutEscape) GetDelimiters() string {
+	return "]," // Note: CYPrivateDefine used "],"
+}
+
+func (le *CYLoggerTemplateLayoutEscape) EscapeString(src string) string {
+	delimiters := le.GetDelimiters()
+	escapeChar := le.GetEscapeChar()
+	runes := []rune(src)
+	result := make([]rune, 0, len(runes)*2)
+	for i := 0; i < len(runes); i++ {
+		c := runes[i]
+		if c == escapeChar {
+			result = append(result, escapeChar, escapeChar)
+			continue
+		}
+		for _, d := range delimiters {
+			if c == d {
+				result = append(result, escapeChar)
+				break
+			}
+		}
+		result = append(result, c)
+	}
+	return string(result)
+}
+
+func (le *CYLoggerTemplateLayoutEscape) WriteEscapeString(sb *strings.Builder, strMsg string) {
+	sb.WriteString(le.EscapeString(strMsg))
+}
+
+// CYLoggerTemplateLayout1 is built-in layout: [HH:MM:SS.mmm][Type][PID][TID][Msg]
+type CYLoggerTemplateLayout1 struct {
+	CYLoggerTemplateLayoutEscape
+	escape *Filter.ICYLoggerPatternFilter
+}
+
+func NewCYLoggerTemplateLayout1() *CYLoggerTemplateLayout1 {
+	return &CYLoggerTemplateLayout1{}
+}
+
+func (l *CYLoggerTemplateLayout1) SetFilter(f *Filter.ICYLoggerPatternFilter) {
+	l.escape = f
+}
+
+func (l *CYLoggerTemplateLayout1) GetTypeIndex() int32 { return 1 }
+
+func (l *CYLoggerTemplateLayout1) GetTimeStamps(nYY, nMM, nDD, nHR, nMN, nSC, nMMN int) string {
+	return fmt.Sprintf("%02d:%02d:%02d.%03d", nHR, nMN, nSC, nMMN)
+}
+
+func (l *CYLoggerTemplateLayout1) GetFormatMessage(strChannel string, eMsgType Core.ELogType, nSeverCode int,
+	strMsg, strFile, strFunction string,
+	nLine int, nProcessId, nThreadId uint64,
+	nYY, nMM, nDD, nHR, nMN, nSC, nMMN int,
+	bEscape bool) string {
+
+	var sb strings.Builder
+	sb.WriteString("[")
+	sb.WriteString(l.GetTimeStamps(nYY, nMM, nDD, nHR, nMN, nSC, nMMN))
+	sb.WriteString("][")
+	sb.WriteString(l.typeName(eMsgType))
+	sb.WriteString("][")
+	sb.WriteString(fmt.Sprintf("%d", nProcessId))
+	sb.WriteString("][")
+	sb.WriteString(fmt.Sprintf("%d", nThreadId))
+	sb.WriteString("][")
+	if bEscape && l.escape != nil {
+		sb.WriteString(l.escape.FilterRequest(&strMsg, l.GetDelimiters(), l.GetEscapeChar(), ']', ','))
+	} else {
+		sb.WriteString(strMsg)
+	}
+	sb.WriteString("]\n")
+	return sb.String()
+}
+
+func (l *CYLoggerTemplateLayout1) typeName(e Core.ELogType) string {
+	switch e {
+	case Core.LogTypeTrace:
+		return "TRACE"
+	case Core.LogTypeDebug:
+		return "DEBUG"
+	case Core.LogTypeInfo:
+		return "INFO"
+	case Core.LogTypeWarn:
+		return "WARN"
+	case Core.LogTypeError:
+		return "ERROR"
+	case Core.LogTypeFatal:
+		return "FATAL"
+	case Core.LogTypeMain:
+		return "MAIN"
+	case Core.LogTypeRemote:
+		return "REMOTE"
+	case Core.LogTypeSys:
+		return "SYS"
+	default:
+		return "LOG"
+	}
+}
+
+// CYLoggerTemplateLayout2 is built-in layout with file/line/func info.
+type CYLoggerTemplateLayout2 struct {
+	CYLoggerTemplateLayoutEscape
+	escape *Filter.ICYLoggerPatternFilter
+}
+
+func NewCYLoggerTemplateLayout2() *CYLoggerTemplateLayout2 {
+	return &CYLoggerTemplateLayout2{}
+}
+
+func (l *CYLoggerTemplateLayout2) SetFilter(f *Filter.ICYLoggerPatternFilter) {
+	l.escape = f
+}
+
+func (l *CYLoggerTemplateLayout2) GetTypeIndex() int32 { return 2 }
+
+func (l *CYLoggerTemplateLayout2) GetTimeStamps(nYY, nMM, nDD, nHR, nMN, nSC, nMMN int) string {
+	return fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d.%03d", nYY, nMM, nDD, nHR, nMN, nSC, nMMN)
+}
+
+func (l *CYLoggerTemplateLayout2) GetFormatMessage(strChannel string, eMsgType Core.ELogType, nSeverCode int,
+	strMsg, strFile, strFunction string,
+	nLine int, nProcessId, nThreadId uint64,
+	nYY, nMM, nDD, nHR, nMN, nSC, nMMN int,
+	bEscape bool) string {
+
+	var sb strings.Builder
+	sb.WriteString("[")
+	sb.WriteString(l.GetTimeStamps(nYY, nMM, nDD, nHR, nMN, nSC, nMMN))
+	sb.WriteString("][")
+	sb.WriteString(l.typeName(eMsgType))
+	sb.WriteString("][")
+	sb.WriteString(fmt.Sprintf("%d", nProcessId))
+	sb.WriteString("][")
+	sb.WriteString(fmt.Sprintf("%d", nThreadId))
+	sb.WriteString("][")
+	sb.WriteString(strFile)
+	sb.WriteString(":")
+	sb.WriteString(fmt.Sprintf("%d", nLine))
+	sb.WriteString("][")
+	sb.WriteString(strFunction)
+	sb.WriteString("] ")
+	if bEscape && l.escape != nil {
+		sb.WriteString(l.escape.FilterRequest(&strMsg, l.GetDelimiters(), l.GetEscapeChar(), ']', ','))
+	} else {
+		sb.WriteString(strMsg)
+	}
+	sb.WriteString("\n")
+	return sb.String()
+}
+
+func (l *CYLoggerTemplateLayout2) typeName(e Core.ELogType) string {
+	switch e {
+	case Core.LogTypeTrace:
+		return "TRACE"
+	case Core.LogTypeDebug:
+		return "DEBUG"
+	case Core.LogTypeInfo:
+		return "INFO"
+	case Core.LogTypeWarn:
+		return "WARN"
+	case Core.LogTypeError:
+		return "ERROR"
+	case Core.LogTypeFatal:
+		return "FATAL"
+	case Core.LogTypeMain:
+		return "MAIN"
+	case Core.LogTypeRemote:
+		return "REMOTE"
+	case Core.LogTypeSys:
+		return "SYS"
+	default:
+		return "LOG"
+	}
+}
+
+// CYLoggerTemplateLayout3 is built-in layout with channel and minimal info.
+type CYLoggerTemplateLayout3 struct {
+	CYLoggerTemplateLayoutEscape
+	escape *Filter.ICYLoggerPatternFilter
+}
+
+func NewCYLoggerTemplateLayout3() *CYLoggerTemplateLayout3 {
+	return &CYLoggerTemplateLayout3{}
+}
+
+func (l *CYLoggerTemplateLayout3) SetFilter(f *Filter.ICYLoggerPatternFilter) {
+	l.escape = f
+}
+
+func (l *CYLoggerTemplateLayout3) GetTypeIndex() int32 { return 3 }
+
+func (l *CYLoggerTemplateLayout3) GetTimeStamps(nYY, nMM, nDD, nHR, nMN, nSC, nMMN int) string {
+	return fmt.Sprintf("%02d:%02d:%02d", nHR, nMN, nSC)
+}
+
+func (l *CYLoggerTemplateLayout3) GetFormatMessage(strChannel string, eMsgType Core.ELogType, nSeverCode int,
+	strMsg, strFile, strFunction string,
+	nLine int, nProcessId, nThreadId uint64,
+	nYY, nMM, nDD, nHR, nMN, nSC, nMMN int,
+	bEscape bool) string {
+
+	var sb strings.Builder
+	sb.WriteString("[")
+	sb.WriteString(l.GetTimeStamps(nYY, nMM, nDD, nHR, nMN, nSC, nMMN))
+	sb.WriteString("][")
+	sb.WriteString(l.typeName(eMsgType))
+	sb.WriteString("][")
+	sb.WriteString(strChannel)
+	sb.WriteString("] ")
+	sb.WriteString(strMsg)
+	sb.WriteString("\n")
+	return sb.String()
+}
+
+func (l *CYLoggerTemplateLayout3) typeName(e Core.ELogType) string {
+	switch e {
+	case Core.LogTypeTrace:
+		return "TRACE"
+	case Core.LogTypeDebug:
+		return "DEBUG"
+	case Core.LogTypeInfo:
+		return "INFO"
+	case Core.LogTypeWarn:
+		return "WARN"
+	case Core.LogTypeError:
+		return "ERROR"
+	case Core.LogTypeFatal:
+		return "FATAL"
+	case Core.LogTypeMain:
+		return "MAIN"
+	case Core.LogTypeRemote:
+		return "REMOTE"
+	case Core.LogTypeSys:
+		return "SYS"
+	default:
+		return "LOG"
+	}
+}
+
+// CYLoggerTemplateLayoutCustom wraps a user-provided layout.
+type CYLoggerTemplateLayoutCustom struct {
+	CYLoggerTemplateLayoutEscape
+	inner  ICYLoggerTemplateLayout
+	escape *Filter.ICYLoggerPatternFilter
+}
+
+func NewCYLoggerTemplateLayoutCustom(inner ICYLoggerTemplateLayout) *CYLoggerTemplateLayoutCustom {
+	return &CYLoggerTemplateLayoutCustom{inner: inner}
+}
+
+func (l *CYLoggerTemplateLayoutCustom) SetFilter(f *Filter.ICYLoggerPatternFilter) {
+	l.escape = f
+	if l.inner != nil {
+		if s, ok := l.inner.(interface{ SetFilter(*Filter.ICYLoggerPatternFilter) }); ok {
+			s.SetFilter(f)
+		}
+	}
+}
+
+func (l *CYLoggerTemplateLayoutCustom) GetTypeIndex() int32 {
+	if l.inner != nil {
+		return l.inner.GetTypeIndex()
+	}
+	return 0
+}
+
+func (l *CYLoggerTemplateLayoutCustom) GetTimeStamps(nYY, nMM, nDD, nHR, nMN, nSC, nMMN int) string {
+	if l.inner != nil {
+		return l.inner.GetTimeStamps(nYY, nMM, nDD, nHR, nMN, nSC, nMMN)
+	}
+	return ""
+}
+
+func (l *CYLoggerTemplateLayoutCustom) GetFormatMessage(strChannel string, eMsgType Core.ELogType, nSeverCode int,
+	strMsg, strFile, strFunction string,
+	nLine int, nProcessId, nThreadId uint64,
+	nYY, nMM, nDD, nHR, nMN, nSC, nMMN int,
+	bEscape bool) string {
+
+	if l.inner != nil {
+		return l.inner.GetFormatMessage(strChannel, eMsgType, nSeverCode,
+			strMsg, strFile, strFunction, nLine, nProcessId, nThreadId,
+			nYY, nMM, nDD, nHR, nMN, nSC, nMMN, bEscape)
+	}
+	return strMsg + "\n"
+}
+
+// CYLoggerTemplateLayoutManager manages layout instances.
+type CYLoggerTemplateLayoutManager struct {
+	Common.CYNoCopy
+	mu       sync.RWMutex
+	layouts  map[int32]ICYLoggerTemplateLayout
+	default_ ICYLoggerTemplateLayout
+}
+
+var g_CYLoggerTemplateLayoutManagerInstance *CYLoggerTemplateLayoutManager
+var g_CYLoggerTemplateLayoutManagerOnce sync.Once
+
+func GetCYLoggerTemplateLayoutManagerInstance() *CYLoggerTemplateLayoutManager {
+	g_CYLoggerTemplateLayoutManagerOnce.Do(func() {
+		m := &CYLoggerTemplateLayoutManager{
+			layouts: make(map[int32]ICYLoggerTemplateLayout),
+		}
+		m.layouts[1] = NewCYLoggerTemplateLayout1()
+		m.layouts[2] = NewCYLoggerTemplateLayout2()
+		m.layouts[3] = NewCYLoggerTemplateLayout3()
+		m.default_ = m.layouts[1]
+		g_CYLoggerTemplateLayoutManagerInstance = m
+	})
+	return g_CYLoggerTemplateLayoutManagerInstance
+}
+
+func (m *CYLoggerTemplateLayoutManager) GetLayout(eLayoutType Core.ELogLayoutType) ICYLoggerTemplateLayout {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if eLayoutType == Core.LogLayoutTypeCustom {
+		return m.default_
+	}
+	if l, ok := m.layouts[int32(eLayoutType)]; ok {
+		return l
+	}
+	return m.default_
+}
+
+func (m *CYLoggerTemplateLayoutManager) SetLayout(eLayoutType Core.ELogLayoutType, pLayout ICYLoggerTemplateLayout) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if eLayoutType == Core.LogLayoutTypeCustom {
+		m.default_ = pLayout
+	} else {
+		m.layouts[int32(eLayoutType)] = pLayout
+	}
+}
+
+func (m *CYLoggerTemplateLayoutManager) RegisterLayout(nIndex int32, pLayout ICYLoggerTemplateLayout) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.layouts[nIndex] = pLayout
+}
