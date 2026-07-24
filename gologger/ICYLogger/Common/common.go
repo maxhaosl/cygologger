@@ -60,11 +60,14 @@ func (c *CYNoCopy) Unlock() {}
 // ============================================================================
 
 const (
-	LogDir             = "Log"
-	LogSeparator       = " "
-	LogEscapeChar      = '\\'
-	LogFieldNameEnd    = ']'
-	LogFieldValueEnd   = ','
+	LogDir                       = "Log"
+	LogSeparator                 = " "
+	LogEscapeChar                = '\\'
+	LogHeaderStart               = '['
+	LogHeaderEnd                 = ']'
+	LogFieldNameEnd              = '='
+	LogFieldValueEnd             = '|'
+	LogExtensionFieldValueEnd    = '#'
 )
 
 const (
@@ -137,12 +140,28 @@ func (e *CYTimeElapsed) Elapsed() time.Duration {
 	return time.Since(e.startTime)
 }
 
+func (e *CYTimeElapsed) ElapsedNanoseconds() int64 {
+	return time.Since(e.startTime).Nanoseconds()
+}
+
+func (e *CYTimeElapsed) ElapsedMicroseconds() int64 {
+	return time.Since(e.startTime).Microseconds()
+}
+
 func (e *CYTimeElapsed) ElapsedMilliseconds() int64 {
 	return time.Since(e.startTime).Milliseconds()
 }
 
 func (e *CYTimeElapsed) ElapsedSeconds() float64 {
 	return time.Since(e.startTime).Seconds()
+}
+
+func (e *CYTimeElapsed) ElapsedMinutes() float64 {
+	return time.Since(e.startTime).Minutes()
+}
+
+func (e *CYTimeElapsed) ElapsedHours() float64 {
+	return time.Since(e.startTime).Hours()
 }
 
 // ============================================================================
@@ -199,6 +218,8 @@ func NewCYNamedThread(name string) *CYNamedThread {
 }
 
 func (t *CYNamedThread) GetName() string     { return t.name }
+func (t *CYNamedThread) SetThreadName(name string) { t.name = name }
+func (t *CYNamedThread) GetThreadId() uint64 { return GetGID() }
 func (t *CYNamedThread) IsRunning() bool     { return t.bRunning.Load() }
 
 func (t *CYNamedThread) Start(run func()) {
@@ -213,6 +234,10 @@ func (t *CYNamedThread) Start(run func()) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
+				// Route background-goroutine panics into the exception log
+				// channel so they are captured with a full stack trace
+				// instead of being silently swallowed.
+				GetCYExceptionLogFileInstance().handlePanic(r)
 			}
 			t.bRunning.Store(false)
 		}()
@@ -258,6 +283,16 @@ type CYNamedCondition struct {
 	cond *sync.Cond
 }
 
+// ERetCode mirrors the C++ RetCode returned by WaitForEvent. It is defined here
+// (rather than in Core) to avoid an import cycle with the Core package.
+type ERetCode int
+
+const (
+	RetCodeOK          ERetCode = 0
+	RetCodeCondTimeout ERetCode = 1
+	RetCodeError       ERetCode = -1
+)
+
 func NewCYNamedCondition(name string) *CYNamedCondition {
 	return &CYNamedCondition{name: name, cond: sync.NewCond(&sync.Mutex{})}
 }
@@ -269,8 +304,44 @@ func (c *CYNamedCondition) Broadcast()      { c.cond.Broadcast() }
 func (c *CYNamedCondition) Lock()           { c.cond.L.Lock() }
 func (c *CYNamedCondition) Unlock()        { c.cond.L.Unlock() }
 
+// Reset re-initialises the condition variable (mirrors C++ Reset).
+func (c *CYNamedCondition) Reset() {
+	c.cond = sync.NewCond(&sync.Mutex{})
+}
+
+// WaitForEvent waits until Signal/Broadcast, or until timeout elapses. On timeout
+// it returns RetCodeCondTimeout, otherwise RetCodeOK (mirrors C++ WaitForEvent).
+func (c *CYNamedCondition) WaitForEvent(timeout time.Duration) ERetCode {
+	if timeout <= 0 {
+		c.Lock()
+		c.cond.Wait()
+		c.Unlock()
+		return RetCodeOK
+	}
+	timedOut := make(chan struct{})
+	timer := time.NewTimer(timeout)
+	go func() {
+		select {
+		case <-timer.C:
+			close(timedOut)
+			c.Signal()
+		case <-timedOut:
+		}
+	}()
+	c.Lock()
+	c.cond.Wait()
+	c.Unlock()
+	timer.Stop()
+	select {
+	case <-timedOut:
+		return RetCodeCondTimeout
+	default:
+		return RetCodeOK
+	}
+}
+
 // ============================================================================
-// CYBaseMessage - pooled message type
+// CYBaseMessage - pooled message type with sync.Pool for zero-allocation reuse
 // ============================================================================
 
 type CYBaseMessage struct {
@@ -285,12 +356,28 @@ type CYBaseMessage struct {
 	NThreadId  uint64
 }
 
+// Reset clears all fields to their zero values for pool reuse.
+func (m *CYBaseMessage) Reset() {
+	m.EMsgType = 0
+	m.NSeverCode = 0
+	m.StrMsg = ""
+	m.StrFile = ""
+	m.StrFunc = ""
+	m.NLine = 0
+	m.NProcessId = 0
+	m.NThreadId = 0
+}
+
+var baseMessagePool = sync.Pool{
+	New: func() any { return &CYBaseMessage{} },
+}
+
 func AcquireBaseMessage() *CYBaseMessage {
-	return &CYBaseMessage{}
+	return baseMessagePool.Get().(*CYBaseMessage)
 }
 
 func (m *CYBaseMessage) Clone() *CYBaseMessage {
-	msg := &CYBaseMessage{}
+	msg := AcquireBaseMessage()
 	*msg = *m
 	return msg
 }
@@ -299,21 +386,34 @@ func ReleaseBaseMessage(m *CYBaseMessage) {
 	if m == nil {
 		return
 	}
+	m.Reset()
+	baseMessagePool.Put(m)
 }
+
+// ============================================================================
+// CYBaseMessage subtypes - these three poolable message types mirror the C++
+// CYNormalMessage / CYEscapeMessage / CYStrMessage trio. C++ models them as
+// separate classes; Go keeps a single CYBaseMessage payload and exposes the
+// three named wrappers (with their own sync.Pools) so callers can select the
+// escaping/formatting semantics at acquisition time.
+// ============================================================================
 
 type CYNormalMessage struct {
 	CYBaseMessage
 }
 
+var normalMessagePool = sync.Pool{
+	New: func() any { return &CYNormalMessage{} },
+}
+
 func AcquireNormalMessage() *CYNormalMessage {
-	return &CYNormalMessage{
-		CYBaseMessage: *AcquireBaseMessage(),
-	}
+	return normalMessagePool.Get().(*CYNormalMessage)
 }
 
 func ReleaseNormalMessage(m *CYNormalMessage) {
 	if m != nil {
-		ReleaseBaseMessage(&m.CYBaseMessage)
+		m.CYBaseMessage.Reset()
+		normalMessagePool.Put(m)
 	}
 }
 
@@ -321,15 +421,18 @@ type CYEscapeMessage struct {
 	CYBaseMessage
 }
 
+var escapeMessagePool = sync.Pool{
+	New: func() any { return &CYEscapeMessage{} },
+}
+
 func AcquireEscapeMessage() *CYEscapeMessage {
-	return &CYEscapeMessage{
-		CYBaseMessage: *AcquireBaseMessage(),
-	}
+	return escapeMessagePool.Get().(*CYEscapeMessage)
 }
 
 func ReleaseEscapeMessage(m *CYEscapeMessage) {
 	if m != nil {
-		ReleaseBaseMessage(&m.CYBaseMessage)
+		m.CYBaseMessage.Reset()
+		escapeMessagePool.Put(m)
 	}
 }
 
@@ -337,15 +440,18 @@ type CYStrMessage struct {
 	CYBaseMessage
 }
 
+var strMessagePool = sync.Pool{
+	New: func() any { return &CYStrMessage{} },
+}
+
 func AcquireStrMessage() *CYStrMessage {
-	return &CYStrMessage{
-		CYBaseMessage: *AcquireBaseMessage(),
-	}
+	return strMessagePool.Get().(*CYStrMessage)
 }
 
 func ReleaseStrMessage(m *CYStrMessage) {
 	if m != nil {
-		ReleaseBaseMessage(&m.CYBaseMessage)
+		m.CYBaseMessage.Reset()
+		strMessagePool.Put(m)
 	}
 }
 
@@ -362,6 +468,10 @@ type CYFPSCounter struct {
 	nMsPerUpdate int64
 	lastTick     atomic.Int64
 	fpsValue     atomic.Value
+
+	// Average-FPS window (mirrors C++ double-window measurement).
+	startTime    atomic.Int64
+	nTotalFrames atomic.Int64
 }
 
 func NewCYFPSCounter(nMsPerUpdate int) *CYFPSCounter {
@@ -372,8 +482,11 @@ func NewCYFPSCounter(nMsPerUpdate int) *CYFPSCounter {
 
 func (c *CYFPSCounter) Start() {
 	c.bRunning.Store(true)
-	c.lastTick.Store(time.Now().UnixNano())
+	now := time.Now().UnixNano()
+	c.lastTick.Store(now)
+	c.startTime.Store(now)
 	c.nFrames.Store(0)
+	c.nTotalFrames.Store(0)
 	c.fpsValue.Store(float64(0))
 }
 
@@ -387,6 +500,7 @@ func (c *CYFPSCounter) IsRunning() bool {
 
 func (c *CYFPSCounter) Increment() {
 	c.nFrames.Add(1)
+	c.nTotalFrames.Add(1)
 	c.update()
 }
 
@@ -398,13 +512,31 @@ func (c *CYFPSCounter) GetFPS() float64 {
 	return v.(float64)
 }
 
+// GetAverageFPS returns the average frames-per-second since Start, mirroring the
+// C++ CYFPSCounter average window.
+func (c *CYFPSCounter) GetAverageFPS() float64 {
+	start := c.startTime.Load()
+	if start == 0 {
+		return 0
+	}
+	elapsed := time.Now().UnixNano() - start
+	if elapsed <= 0 {
+		return 0
+	}
+	total := c.nTotalFrames.Load()
+	return float64(total) * float64(time.Second) / float64(elapsed)
+}
+
 func (c *CYFPSCounter) GetFrames() int64 {
 	return c.nFrames.Load()
 }
 
 func (c *CYFPSCounter) Reset() {
 	c.nFrames.Store(0)
-	c.lastTick.Store(time.Now().UnixNano())
+	c.nTotalFrames.Store(0)
+	now := time.Now().UnixNano()
+	c.lastTick.Store(now)
+	c.startTime.Store(now)
 	c.fpsValue.Store(float64(0))
 }
 
@@ -561,6 +693,129 @@ func (pf *CYPublicFunction) IsMacOS() bool {
 	return runtime.GOOS == "darwin"
 }
 
+// GetFileName returns the file name of path stripped of its directory and
+// extension, mirroring C++ CYPublicFunction::GetFileName.
+func (pf *CYPublicFunction) GetFileName(path string) string {
+	base := filepath.Base(path)
+	if ext := filepath.Ext(base); ext != "" {
+		base = base[:len(base)-len(ext)]
+	}
+	return base
+}
+
+// GetFileExt returns the extension of path without the leading dot, mirroring
+// C++ CYPublicFunction::GetFileExt.
+func (pf *CYPublicFunction) GetFileExt(path string) string {
+	return strings.TrimPrefix(filepath.Ext(path), ".")
+}
+
+// GetBaseLogName returns the base log file name of path with everything after
+// the last '_' removed, mirroring C++ CYPublicFunction::GetBaseLogName.
+func (pf *CYPublicFunction) GetBaseLogName(path string) string {
+	name := pf.GetFileName(path)
+	if i := strings.LastIndex(name, "_"); i != -1 {
+		return name[:i]
+	}
+	return name
+}
+
+// GetBasePath returns the directory joined with the base log name of path,
+// mirroring C++ CYPublicFunction::GetBasePath.
+func (pf *CYPublicFunction) GetBasePath(path string) string {
+	return filepath.Join(filepath.Dir(path), pf.GetBaseLogName(path))
+}
+
+// PrintTraceHexLog prints a hex+ASCII dump of data to stdout using the trace
+// colour (no file logging), mirroring C++ CYPublicFunction::PrintTraceHexLog.
+func (pf *CYPublicFunction) PrintTraceHexLog(data []byte) {
+	pf.WriteToConsole(ColorTrace, formatHexDump(data))
+}
+
+// WriteToConsole writes msg to stdout wrapped in the given ANSI color (mirrors
+// C++ CYPublicFunction::WriteToConsole coloured output).
+func (pf *CYPublicFunction) WriteToConsole(color, msg string) {
+	if color == "" {
+		fmt.Fprint(os.Stdout, msg)
+		return
+	}
+	fmt.Fprintf(os.Stdout, "%s%s%s", color, msg, ColorReset)
+}
+
+// PrintLog prints a formatted, info-coloured line to stdout (no file logging).
+func (pf *CYPublicFunction) PrintLog(format string, args ...any) {
+	pf.WriteToConsole(ColorInfo, fmt.Sprintf(format, args...)+"\n")
+}
+
+// PrintTraceLog prints a formatted, trace-coloured line to stdout (no file logging).
+func (pf *CYPublicFunction) PrintTraceLog(format string, args ...any) {
+	pf.WriteToConsole(ColorTrace, fmt.Sprintf(format, args...)+"\n")
+}
+
+// PrintHexLog prints a hex+ASCII dump of data to stdout (no file logging).
+func (pf *CYPublicFunction) PrintHexLog(data []byte) {
+	pf.WriteToConsole(ColorReset, formatHexDump(data))
+}
+
+// TrimString trims leading/trailing whitespace (mirrors C++ TrimString).
+func (pf *CYPublicFunction) TrimString(s string) string {
+	return strings.TrimSpace(s)
+}
+
+// Verify panics with msg when condition is false (mirrors C++ Verify).
+func (pf *CYPublicFunction) Verify(condition bool, msg string) {
+	if !condition {
+		panic(msg)
+	}
+}
+
+// GetLastWriteTime returns the last modification time of the file at path.
+func (pf *CYPublicFunction) GetLastWriteTime(path string) time.Time {
+	info, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}
+	}
+	return info.ModTime()
+}
+
+// GetLocalUTCOffsetHours returns the local timezone's offset from UTC in hours,
+// mirroring C++ GetLocalUTCOffsetHours.
+func (pf *CYPublicFunction) GetLocalUTCOffsetHours() float64 {
+	_, offsetSec := time.Now().Zone()
+	return float64(offsetSec) / 3600.0
+}
+
+// formatHexDump emits a hex + ASCII table (re-used by PrintHexLog).
+func formatHexDump(data []byte) string {
+	const lineWidth = 16
+	var sb strings.Builder
+	for i := 0; i < len(data); i += lineWidth {
+		end := i + lineWidth
+		if end > len(data) {
+			end = len(data)
+		}
+		sb.WriteString(fmt.Sprintf("%04x: ", i))
+		for j := i; j < end; j++ {
+			sb.WriteString(fmt.Sprintf("%02x ", data[j]))
+		}
+		if end-i < lineWidth {
+			for j := end - i; j < lineWidth; j++ {
+				sb.WriteString("   ")
+			}
+		}
+		sb.WriteString(" |")
+		for j := i; j < end; j++ {
+			c := data[j]
+			if c >= 32 && c < 127 {
+				sb.WriteByte(c)
+			} else {
+				sb.WriteByte('.')
+			}
+		}
+		sb.WriteString("|\n")
+	}
+	return sb.String()
+}
+
 // GetGID returns the current goroutine ID.
 func GetGID() uint64 {
 	var id uint64
@@ -610,35 +865,49 @@ func (pc *CYPathConvert) ConvertLogPath(szLogPath string) string {
 	return szLogPath
 }
 
-func (pc *CYPathConvert) GetLogFileName(szChannel string, eLogType int) string {
-	now := time.Now()
-	prefix := ""
+func (pc *CYPathConvert) logPrefix(eLogType int) string {
 	switch eLogType {
 	case 1:
-		prefix = "Trace"
+		return "Trace"
 	case 2:
-		prefix = "Debug"
+		return "Debug"
 	case 3:
-		prefix = "Info"
+		return "Info"
 	case 4:
-		prefix = "Warn"
+		return "Warn"
 	case 5:
-		prefix = "Error"
+		return "Error"
 	case 6:
-		prefix = "Fatal"
+		return "Fatal"
 	case 7:
-		prefix = "Main"
+		return "Main"
 	case 8:
-		prefix = "Remote"
+		return "Remote"
 	case 9:
-		prefix = "Sys"
+		return "Sys"
 	default:
-		prefix = "Log"
+		return "Log"
 	}
+}
+
+func (pc *CYPathConvert) GetLogFileName(szChannel string, eLogType int) string {
+	now := time.Now()
+	prefix := pc.logPrefix(eLogType)
 	if szChannel != "" {
 		return fmt.Sprintf("%s_%s_%s.log", prefix, szChannel, now.Format("20060102_150405"))
 	}
 	return fmt.Sprintf("%s_%s.log", prefix, now.Format("20060102_150405"))
+}
+
+// GetFixedLogFileName returns a stable file name (no timestamp). It is used in
+// LogFileModeAppend to keep a single rolling file per log type, mirroring the
+// C++ fixed-name append behaviour.
+func (pc *CYPathConvert) GetFixedLogFileName(szChannel string, eLogType int) string {
+	prefix := pc.logPrefix(eLogType)
+	if szChannel != "" {
+		return fmt.Sprintf("%s_%s.log", prefix, szChannel)
+	}
+	return fmt.Sprintf("%s.log", prefix)
 }
 
 func (pc *CYPathConvert) GetErrorFileName(szChannel string) string {
@@ -755,4 +1024,43 @@ func (fr *CYFileRestriction) CheckFileSize(szFileName string) bool {
 		return false
 	}
 	return info.Size() >= int64(fr.nCheckFileSize)
+}
+
+// IsCreateNewLog reports whether a fresh log file should be started, mirroring
+// C++ CYFileRestriction::IsCreateNewLog (size-threshold based decision).
+func (fr *CYFileRestriction) IsCreateNewLog(nFileSize int64) bool {
+	if !fr.bEnableCheck {
+		return false
+	}
+	return nFileSize >= int64(fr.nCheckFileSize)
+}
+
+// GetNewLogName returns a timestamped log file name for a forced rotation,
+// mirroring C++ CYFileRestriction::GetNewLogName.
+func (fr *CYFileRestriction) GetNewLogName() string {
+	now := time.Now()
+	return fmt.Sprintf("Log_%s.log", now.Format("20060102_150405.000000"))
+}
+
+// ============================================================================
+// CYTimeUtils - high-resolution timestamp helper
+// ============================================================================
+
+// NowNano returns the current time in nanoseconds. C++ CYTimeUtils::rdtsc() reads
+// the CPU time-stamp counter, which has no portable Go equivalent; NowNano() is
+// the closest cross-platform approximation and is suitable for elapsed-time and
+// ordering checks.
+func NowNano() int64 {
+	return time.Now().UnixNano()
+}
+
+// Rdtsc returns a nanosecond-granularity timestamp - the closest portable Go
+// equivalent of C++ CYTimeUtils::rdtsc() (the CPU time-stamp counter). Go cannot
+// read the hardware TSC directly (nor runtime.nanotime, which is unexported);
+// time.Now().UnixNano() provides a high-resolution wall-clock timestamp that is
+// suitable for elapsed-time and ordering measurements, mirroring the TSC's
+// intended use. Prefer Rdtsc over NowNano only when a symbolic TSC name aids
+// readability at a call site.
+func Rdtsc() int64 {
+	return time.Now().UnixNano()
 }

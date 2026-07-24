@@ -35,19 +35,31 @@
 //
 //	import gologger "github.com/maxhaosl/CYGoLogger/ICYLogger"
 //
-// Example usage:
+// Example usage (new Go-idiomatic API with auto caller info):
+//
+//	gologger.InitDefault("./logs")
+//	defer gologger.Scope()()
+//	gologger.Info("Hello, %s!", "world")
+//	gologger.Debug("value = %d", val)
+//	gologger.FlushLogger()
+//	gologger.UnInitLogger()
+//
+// Legacy C-style API:
 //
 //	gologger.InitLogger("./Log", true)
 //	gologger.LOG_INFO("Hello, %s!", "world")
-//	gologger.FlushLogger()
-//	gologger.UnInitLogger()
 package ICYLogger
 
 import (
+	Common "github.com/maxhaosl/CYGoLogger/ICYLogger/Common"
 	Core "github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
+	Encryption "github.com/maxhaosl/CYGoLogger/ICYLogger/Encryption"
+	Entity "github.com/maxhaosl/CYGoLogger/ICYLogger/Entity"
+	Appender "github.com/maxhaosl/CYGoLogger/ICYLogger/Appender"
 	Filter "github.com/maxhaosl/CYGoLogger/ICYLogger/Filter"
 	Layout "github.com/maxhaosl/CYGoLogger/ICYLogger/Layout"
 	Logger "github.com/maxhaosl/CYGoLogger/ICYLogger/Logger"
+	UpLoad "github.com/maxhaosl/CYGoLogger/ICYLogger/UpLoad"
 )
 
 // =============================================================================
@@ -61,6 +73,7 @@ type (
 	ELogFileMode     = Core.ELogFileMode
 	ELogLayoutType   = Core.ELogLayoutType
 	STStatistics     = Core.STStatistics
+	CYLoggerConfig   = Core.CYLoggerConfig
 )
 
 const (
@@ -138,9 +151,12 @@ type (
 )
 
 const (
-	LogEscape       = Filter.LogEscape
-	LogFieldNameEnd = Filter.LogFieldNameEnd
-	LogFieldValueEnd = Filter.LogFieldValueEnd
+	LogEscape                 = Filter.LogEscape
+	LogHeaderStart            = Filter.LogHeaderStart
+	LogHeaderEnd              = Filter.LogHeaderEnd
+	LogFieldNameEnd           = Filter.LogFieldNameEnd
+	LogFieldValueEnd          = Filter.LogFieldValueEnd
+	LogExtensionFieldValueEnd = Filter.LogExtensionFieldValueEnd
 )
 
 func NewPatternFilter() *Filter.ICYLoggerPatternFilter {
@@ -169,6 +185,45 @@ func LOG_MAIN(szMsg string, args ...any)   { Logger.LOG_MAIN(szMsg, args...) }
 func LOG_SYS(szMsg string, args ...any)    { Logger.LOG_SYS(szMsg, args...) }
 func LOG_REMOTE(szMsg string, args ...any) { Logger.LOG_REMOTE(szMsg, args...) }
 
+// ---- Direct logging convenience functions (bypass level filter) ----
+
+func LOG_DIRECT_TRACE(szMsg string, args ...any)  { Logger.LOG_DIRECT_TRACE(szMsg, args...) }
+func LOG_DIRECT_DEBUG(szMsg string, args ...any)  { Logger.LOG_DIRECT_DEBUG(szMsg, args...) }
+func LOG_DIRECT_INFO(szMsg string, args ...any)   { Logger.LOG_DIRECT_INFO(szMsg, args...) }
+func LOG_DIRECT_WARN(szMsg string, args ...any)   { Logger.LOG_DIRECT_WARN(szMsg, args...) }
+func LOG_DIRECT_ERROR(szMsg string, args ...any)  { Logger.LOG_DIRECT_ERROR(szMsg, args...) }
+func LOG_DIRECT_FATAL(szMsg string, args ...any)  { Logger.LOG_DIRECT_FATAL(szMsg, args...) }
+func LOG_DIRECT_MAIN(szMsg string, args ...any)   { Logger.LOG_DIRECT_MAIN(szMsg, args...) }
+
+// =============================================================================
+// Entity / file management helpers (github.com/maxhaosl/CYGoLogger/ICYLogger/Entity)
+// =============================================================================
+
+// ForceNewFile forces every log entity to rotate to a fresh file (C++ ForceEntityNewFile).
+func ForceNewFile() { Logger.GetInstance().ForceNewFile() }
+
+// GetLoggerEntity returns the entity registered for eLogType (C++ GetLoggerEntity).
+func GetLoggerEntity(eLogType Core.ELogType) *Entity.CYLoggerEntity {
+	return Logger.GetInstance().GetLoggerEntity(eLogType)
+}
+
+// ReleaseLoggerEntity flushes, detaches and removes the entity for eLogType (C++ ReleaseLoggerEntity).
+func ReleaseLoggerEntity(eLogType Core.ELogType) { Logger.GetInstance().ReleaseLoggerEntity(eLogType) }
+
+// ResetLogFile forces every file appender to rotate to a fresh file (C++ ResetLogFile).
+func ResetLogFile() { Logger.GetInstance().ResetLogFile() }
+
+// AddLogType records an extra log type tracked by the schedule (C++ AddLogType).
+func AddLogType(eLogType Core.ELogType) { Logger.GetInstance().AddLogType(eLogType) }
+
+// ClearConsole clears the console screen via the active console appender
+// (mirrors C++ ClearConsole).
+func ClearConsole() {
+	if a := Appender.GetConsoleAppender(); a != nil {
+		a.ClearConsole()
+	}
+}
+
 // =============================================================================
 // Layout functions (github.com/maxhaosl/CYGoLogger/ICYLogger/Layout)
 // =============================================================================
@@ -189,4 +244,73 @@ func GetCYLoggerPatternFilterChainInstance() *Filter.CYLoggerPatternFilterChain 
 }
 func GetCYLoggerPatternFilterManagerInstance() *Filter.CYLoggerPatternFilterManager {
 	return Filter.GetCYLoggerPatternFilterManagerInstance()
+}
+
+// =============================================================================
+// Config functions (re-exported from Core for unified access)
+// =============================================================================
+
+func GetCYLoggerConfigInstance() *Core.CYLoggerConfig {
+	return Core.GetCYLoggerConfigInstance()
+}
+
+// =============================================================================
+// SimpleLog / Exception types (github.com/maxhaosl/CYGoLogger/ICYLogger/Common)
+// =============================================================================
+
+type (
+	ESimpleLogType     = Common.ESimpleLogType
+	CYSimpleLogFile    = Common.CYSimpleLogFile
+	CYSimpleLogConsole = Common.CYSimpleLogConsole
+	ISimpleLog         = Common.ISimpleLog
+	PanicHandler       = Common.PanicHandler
+)
+
+const (
+	SimpleLogTypeNone    = Common.SimpleLogTypeNone
+	SimpleLogTypeFile    = Common.SimpleLogTypeFile
+	SimpleLogTypeConsole = Common.SimpleLogTypeConsole
+	SimpleLogTypeAll     = Common.SimpleLogTypeAll
+)
+
+func NewCYSimpleLogFile() *Common.CYSimpleLogFile       { return Common.NewCYSimpleLogFile() }
+func NewCYSimpleLogConsole() *Common.CYSimpleLogConsole { return Common.NewCYSimpleLogConsole() }
+func GetCYExceptionLogFileInstance() *Common.CYExceptionLogFile {
+	return Common.GetCYExceptionLogFileInstance()
+}
+
+// =============================================================================
+// UpLoad types (github.com/maxhaosl/CYGoLogger/ICYLogger/UpLoad)
+// =============================================================================
+
+type (
+	EUpLoadType = UpLoad.EUpLoadType
+	IUpLoad     = UpLoad.IUpLoad
+)
+
+const (
+	UpLoadTypeNone = UpLoad.UpLoadTypeNone
+	UpLoadTypeFTP  = UpLoad.UpLoadTypeFTP
+)
+
+func GetCYUpLoadFactoryInstance() *UpLoad.CYUpLoadFactory {
+	return UpLoad.GetCYUpLoadFactoryInstance()
+}
+
+// =============================================================================
+// Encryption types (github.com/maxhaosl/CYGoLogger/ICYLogger/Encryption)
+// =============================================================================
+
+type (
+	EEncryptionType = Encryption.EEncryptionType
+	IEncryption     = Encryption.IEncryption
+)
+
+const (
+	EncryptionTypeNone   = Encryption.EncryptionTypeNone
+	EncryptionTypeAESGCM = Encryption.EncryptionTypeAESGCM
+)
+
+func GetCYEncryptionFactoryInstance() *Encryption.CYEncryptionFactory {
+	return Encryption.GetCYEncryptionFactoryInstance()
 }

@@ -54,6 +54,43 @@ func NewCYLoggerEntity(eLogType Core.ELogType) *CYLoggerEntity {
 
 func (e *CYLoggerEntity) GetLogType() Core.ELogType { return e.eLogType }
 
+// GetId returns the unique log-type id of this entity (mirrors C++ GetId).
+func (e *CYLoggerEntity) GetId() Core.ELogType { return e.eLogType }
+
+// GetLogName returns the active log file path of the first file-backed appender,
+// mirroring C++ GetLogName which delegates to its single appender.
+func (e *CYLoggerEntity) GetLogName() string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	for _, app := range e.appenders {
+		if name := app.GetLogName(); name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
+// GetSize returns the total size in bytes of all file-backed appenders owned by
+// this entity (mirrors delegating to each appender's GetSize).
+func (e *CYLoggerEntity) GetSize() int64 {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	var total int64
+	for _, app := range e.appenders {
+		total += app.GetSize()
+	}
+	return total
+}
+
+// ForceNewFile forces every appender to rotate to a fresh file (mirrors C++ ForceNewFile).
+func (e *CYLoggerEntity) ForceNewFile() {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	for _, app := range e.appenders {
+		app.ForceNewFile()
+	}
+}
+
 func (e *CYLoggerEntity) AddAppender(appender_ Appender.IAppender) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -89,28 +126,16 @@ func (e *CYLoggerEntity) GetAppenderCount() int {
 func (e *CYLoggerEntity) Write(msg *Common.CYBaseMessage) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	for i, app := range e.appenders {
+	for _, app := range e.appenders {
 		if !app.IsEnable() {
 			continue
 		}
-		// Type assertions force concrete method dispatch for non-embedded appenders.
-		if _, ok := app.(*Appender.CYLoggerFileAppender); ok {
-			app.Write(msg)
-		} else if _, ok := app.(*Appender.CYLoggerMainAppender); ok {
-			app.Write(msg)
-		} else if _, ok := app.(*Appender.CYLoggerBufferAppender); ok {
-			app.Write(msg)
-		} else if _, ok := app.(*Appender.CYLoggerRemoteAppender); ok {
-			app.Write(msg)
-		} else if _, ok := app.(*Appender.CYLoggerSystemAppender); ok {
-			app.Write(msg)
-		} else {
-			if i == 0 {
-				app.Write(msg)
-			} else {
-				app.Write(msg.Clone())
-			}
-		}
+		// Each appender owns its message-handling policy: synchronous appenders
+		// (file/main) write in-place without releasing, while asynchronous ones
+		// (console/remote/buffer/system) clone the message into their queue and
+		// release the clone when consumed. The original msg is released exactly
+		// once by the caller after routing completes.
+		app.Write(msg)
 	}
 }
 
@@ -139,7 +164,12 @@ func (e *CYLoggerEntity) UnInit() {
 	defer e.mu.Unlock()
 	for _, app := range e.appenders {
 		app.UnInit()
+		// Mirror the C++ detach path: once an entity is torn down its appenders
+		// must be removed from the global appender registry, otherwise the
+		// registry only ever grows and can never reflect the live mount state.
+		Appender.GetCYLoggerAppenderFactoryInstance().UnregisterAppender(app)
 	}
+	e.appenders = nil
 }
 
 func (e *CYLoggerEntity) SetEnable(bEnable bool) {
@@ -186,6 +216,45 @@ func (f *CYLoggerEntityFactory) CreateEntity(eLogType Core.ELogType) *CYLoggerEn
 	e := NewCYLoggerEntity(eLogType)
 	f.entities[eLogType] = e
 	return e
+}
+
+// GetLoggerEntity returns the entity registered for eLogType, mirroring C++ GetLoggerEntity.
+func (f *CYLoggerEntityFactory) GetLoggerEntity(eLogType Core.ELogType) *CYLoggerEntity {
+	return f.GetEntity(eLogType)
+}
+
+// ReleaseLoggerEntity flushes and detaches the entity for eLogType, then removes it
+// from the factory map (mirrors C++ ReleaseLoggerEntity).
+func (f *CYLoggerEntityFactory) ReleaseLoggerEntity(eLogType Core.ELogType) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if e, ok := f.entities[eLogType]; ok {
+		e.Flush()
+		e.UnInit()
+		delete(f.entities, eLogType)
+	}
+}
+
+// ForceEntityNewFile forces every registered entity to rotate to a fresh file
+// (mirrors C++ ForceEntityNewFile).
+func (f *CYLoggerEntityFactory) ForceEntityNewFile() {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	for _, e := range f.entities {
+		e.ForceNewFile()
+	}
+}
+
+// ReleaseAllLoggerEntity flushes, detaches and removes every registered entity
+// (mirrors C++ ReleaseAllLoggerEntity).
+func (f *CYLoggerEntityFactory) ReleaseAllLoggerEntity() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for t, e := range f.entities {
+		e.Flush()
+		e.UnInit()
+		delete(f.entities, t)
+	}
 }
 
 func (f *CYLoggerEntityFactory) InitAll() bool {

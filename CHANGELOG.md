@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2025-07-24
+
+### Added
+
+- **Top-level runtime shortcuts**: `SetWriteRemote(bool)`, `SetWriteSys(bool)`, `SetLogLevel(ELogLevelFilter)`, `SetFilter(*PatternFilter)`, `SetLayout(ELogLayoutType)` — configure logger settings without calling `GetInstance()` boilerplate
+- **Hex/Escape variants for Main/Remote/Sys**: `HexMain`, `HexRemote`, `HexSys`, `EscapeMain`, `EscapeRemote`, `EscapeSys` — hex-dump and escape-safe logging for all log types
+- **Remote/Sys auto-mount on init**: `InitDefault` / `InitDefaultWithOpts` automatically mount Remote and Sys appenders when `WithWriteRemote(true)` / `WithWriteSys(true)` are set, mirroring C++ `CY_LOG_APPENDER` full-set behaviour
+- **Statistics.Reset()**: `FreeInstance()` now calls `Statistics.Reset()` to zero all counters on teardown, aligning with C++ `CYLoggerImpl::FreeInstance → Statistics()->Reset()`
+- **AppenderFactory NONE→Console branch**: `CreateAppender` now treats `LogTypeNone` as a console appender, matching C++ `CreateFileAppender` semantics
+- **Windows `GetExePath()`**: Cross-platform executable directory detection with `//go:build windows` build tag, fallback to `os.Getwd` on non-Windows
+- **Common alignment**: `CYPublicFunction` toolset (PrintLog, PrintTraceLog, TrimString, GetLocalUTCOffsetHours, Verify), `NowNano` rdtsc equivalent, `Message` three-type aliases
+
+### Changed
+
+- **FPS window**: detection window changed from 1s to 5s (`LOG_FPS_CHECK_DURATION`), matching C++ default
+
+### Fixed
+
+- Removed stale empty test files (`zz_close_diag_test.go`, `zz_verify_test.go`) that caused compilation failures
+
+### Known Limitations
+
+- `CYLoggerSystemAppender.doWrite` is not wired in `Run()` — syslog output is a stub
+- `CYLoggerRemoteAppender` uses TCP instead of the C++ UDP protocol
+- `CYLoggerMainAppender` does not inherit the 6-level per-type buffer queue like its C++ counterpart
+- File cleanup only supports age-based expiration (not count, type-size, or total-size limits)
+- `CY_SCOPE()` RAII scope logging macro has no Go equivalent
+
 ## [0.1.0] - 2024-01-01
 
 ### Added

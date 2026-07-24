@@ -40,10 +40,16 @@ import (
 )
 
 // Escape characters for log message parsing.
+// These are re-exported from Common (the single source of truth) so that
+// Filter, Layout and Common all share identical delimiters matching the C++
+// version: header [ ], field name =, field value |, extension field value #.
 const (
-	LogEscape       = '\\'
-	LogFieldNameEnd = '='
-	LogFieldValueEnd = ';'
+	LogEscape                 = Common.LogEscapeChar
+	LogHeaderStart            = Common.LogHeaderStart
+	LogHeaderEnd              = Common.LogHeaderEnd
+	LogFieldNameEnd           = Common.LogFieldNameEnd
+	LogFieldValueEnd          = Common.LogFieldValueEnd
+	LogExtensionFieldValueEnd = Common.LogExtensionFieldValueEnd
 )
 
 // TupleFieldType represents a key-value filter pair.

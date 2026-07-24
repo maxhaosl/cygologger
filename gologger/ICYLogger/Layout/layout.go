@@ -34,6 +34,8 @@ package Layout
 
 import (
 	"fmt"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -50,7 +52,13 @@ func (le *CYLoggerTemplateLayoutEscape) GetEscapeChar() rune {
 }
 
 func (le *CYLoggerTemplateLayoutEscape) GetDelimiters() string {
-	return "]," // Note: CYPrivateDefine used "],"
+	return string([]rune{
+		Common.LogHeaderStart,
+		Common.LogHeaderEnd,
+		Common.LogFieldNameEnd,
+		Common.LogFieldValueEnd,
+		Common.LogExtensionFieldValueEnd,
+	})
 }
 
 func (le *CYLoggerTemplateLayoutEscape) EscapeString(src string) string {
@@ -96,7 +104,7 @@ func (l *CYLoggerTemplateLayout1) SetFilter(f *Filter.ICYLoggerPatternFilter) {
 func (l *CYLoggerTemplateLayout1) GetTypeIndex() int32 { return 1 }
 
 func (l *CYLoggerTemplateLayout1) GetTimeStamps(nYY, nMM, nDD, nHR, nMN, nSC, nMMN int) string {
-	return fmt.Sprintf("%02d:%02d:%02d.%03d", nHR, nMN, nSC, nMMN)
+	return fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d.%03d", nYY, nMM, nDD, nHR, nMN, nSC, nMMN)
 }
 
 func (l *CYLoggerTemplateLayout1) GetFormatMessage(strChannel string, eMsgType Core.ELogType, nSeverCode int,
@@ -106,47 +114,72 @@ func (l *CYLoggerTemplateLayout1) GetFormatMessage(strChannel string, eMsgType C
 	bEscape bool) string {
 
 	var sb strings.Builder
-	sb.WriteString("[")
+	hs := Common.LogHeaderStart
+	he := Common.LogHeaderEnd
+	fv := Common.LogFieldValueEnd
+	fn := Common.LogFieldNameEnd
+	ev := Common.LogExtensionFieldValueEnd
+
+	// [Time]
+	sb.WriteRune(hs)
 	sb.WriteString(l.GetTimeStamps(nYY, nMM, nDD, nHR, nMN, nSC, nMMN))
-	sb.WriteString("][")
-	sb.WriteString(l.typeName(eMsgType))
-	sb.WriteString("][")
-	sb.WriteString(fmt.Sprintf("%d", nProcessId))
-	sb.WriteString("][")
-	sb.WriteString(fmt.Sprintf("%d", nThreadId))
-	sb.WriteString("][")
-	if bEscape && l.escape != nil {
-		sb.WriteString(l.escape.FilterRequest(&strMsg, l.GetDelimiters(), l.GetEscapeChar(), ']', ','))
+	sb.WriteRune(he)
+
+	// |Type[:SeverCode]
+	sb.WriteRune(fv)
+	if nSeverCode >= 0 {
+		sb.WriteString(layoutTypeCode(eMsgType))
+		sb.WriteRune(':')
+		sb.WriteString(strconv.Itoa(nSeverCode))
 	} else {
-		sb.WriteString(strMsg)
+		sb.WriteString(layoutTypeCode(eMsgType))
 	}
-	sb.WriteString("]\n")
+
+	// |P:pid
+	sb.WriteRune(fv)
+	sb.WriteString("P:")
+	sb.WriteString(strconv.FormatUint(nProcessId, 10))
+
+	// |T:tid
+	sb.WriteRune(fv)
+	sb.WriteString("T:")
+	sb.WriteString(strconv.FormatUint(nThreadId, 10))
+
+	// |Key=Value#... (extension field via the pattern filter)
+	if bEscape && l.escape != nil {
+		if ext := l.escape.FilterRequest(&strMsg, l.GetDelimiters(), l.GetEscapeChar(), fn, ev); ext != "" {
+			sb.WriteRune(fv)
+			sb.WriteString(ext)
+		}
+	}
+
+	// |file::func(line)]
+	sb.WriteRune(fv)
+	sb.WriteString(layoutBaseName(strFile))
+	sb.WriteString("::")
+	sb.WriteString(strFunction)
+	sb.WriteRune('(')
+	sb.WriteString(strconv.Itoa(nLine))
+	sb.WriteRune(')')
+	sb.WriteRune(he)
+
+	// leading space before the message body
+	sb.WriteRune(' ')
+
+	if strChannel != "" {
+		sb.WriteRune(hs)
+		sb.WriteString("Channel:")
+		sb.WriteString(strChannel)
+		sb.WriteRune(he)
+	}
+
+	sb.WriteString(strMsg)
+	sb.WriteString("\n")
 	return sb.String()
 }
 
 func (l *CYLoggerTemplateLayout1) typeName(e Core.ELogType) string {
-	switch e {
-	case Core.LogTypeTrace:
-		return "TRACE"
-	case Core.LogTypeDebug:
-		return "DEBUG"
-	case Core.LogTypeInfo:
-		return "INFO"
-	case Core.LogTypeWarn:
-		return "WARN"
-	case Core.LogTypeError:
-		return "ERROR"
-	case Core.LogTypeFatal:
-		return "FATAL"
-	case Core.LogTypeMain:
-		return "MAIN"
-	case Core.LogTypeRemote:
-		return "REMOTE"
-	case Core.LogTypeSys:
-		return "SYS"
-	default:
-		return "LOG"
-	}
+	return layoutTypeCode(e)
 }
 
 // CYLoggerTemplateLayout2 is built-in layout with file/line/func info.
@@ -176,53 +209,71 @@ func (l *CYLoggerTemplateLayout2) GetFormatMessage(strChannel string, eMsgType C
 	bEscape bool) string {
 
 	var sb strings.Builder
-	sb.WriteString("[")
+	hs := Common.LogHeaderStart
+	he := Common.LogHeaderEnd
+	fv := Common.LogFieldValueEnd
+	fn := Common.LogFieldNameEnd
+	ev := Common.LogExtensionFieldValueEnd
+
+	// [Time]
+	sb.WriteRune(hs)
 	sb.WriteString(l.GetTimeStamps(nYY, nMM, nDD, nHR, nMN, nSC, nMMN))
-	sb.WriteString("][")
-	sb.WriteString(l.typeName(eMsgType))
-	sb.WriteString("][")
-	sb.WriteString(fmt.Sprintf("%d", nProcessId))
-	sb.WriteString("][")
-	sb.WriteString(fmt.Sprintf("%d", nThreadId))
-	sb.WriteString("][")
-	sb.WriteString(strFile)
-	sb.WriteString(":")
-	sb.WriteString(fmt.Sprintf("%d", nLine))
-	sb.WriteString("][")
-	sb.WriteString(strFunction)
-	sb.WriteString("] ")
-	if bEscape && l.escape != nil {
-		sb.WriteString(l.escape.FilterRequest(&strMsg, l.GetDelimiters(), l.GetEscapeChar(), ']', ','))
+	sb.WriteRune(he)
+
+	// [Type[:SeverCode]]
+	sb.WriteRune(hs)
+	if nSeverCode >= 0 {
+		sb.WriteString(layoutTypeCode(eMsgType))
+		sb.WriteRune(':')
+		sb.WriteString(strconv.Itoa(nSeverCode))
 	} else {
-		sb.WriteString(strMsg)
+		sb.WriteString(layoutTypeCode(eMsgType))
 	}
+	sb.WriteRune(he)
+
+	// |P:pid
+	sb.WriteRune(fv)
+	sb.WriteString("P:")
+	sb.WriteString(strconv.FormatUint(nProcessId, 10))
+
+	// |T:tid]
+	sb.WriteRune(fv)
+	sb.WriteString("T:")
+	sb.WriteString(strconv.FormatUint(nThreadId, 10))
+	sb.WriteRune(he)
+
+	// [Key=Value#...] (extension field)
+	if bEscape && l.escape != nil {
+		if ext := l.escape.FilterRequest(&strMsg, l.GetDelimiters(), l.GetEscapeChar(), fn, ev); ext != "" {
+			sb.WriteRune(hs)
+			sb.WriteString(ext)
+			sb.WriteRune(he)
+		}
+	}
+
+	// [func(line)] 
+	sb.WriteRune(hs)
+	sb.WriteString(strFunction)
+	sb.WriteRune('(')
+	sb.WriteString(strconv.Itoa(nLine))
+	sb.WriteRune(')')
+	sb.WriteRune(he)
+	sb.WriteRune(' ')
+
+	if strChannel != "" {
+		sb.WriteRune(hs)
+		sb.WriteString("Channel:")
+		sb.WriteString(strChannel)
+		sb.WriteRune(he)
+	}
+
+	sb.WriteString(strMsg)
 	sb.WriteString("\n")
 	return sb.String()
 }
 
 func (l *CYLoggerTemplateLayout2) typeName(e Core.ELogType) string {
-	switch e {
-	case Core.LogTypeTrace:
-		return "TRACE"
-	case Core.LogTypeDebug:
-		return "DEBUG"
-	case Core.LogTypeInfo:
-		return "INFO"
-	case Core.LogTypeWarn:
-		return "WARN"
-	case Core.LogTypeError:
-		return "ERROR"
-	case Core.LogTypeFatal:
-		return "FATAL"
-	case Core.LogTypeMain:
-		return "MAIN"
-	case Core.LogTypeRemote:
-		return "REMOTE"
-	case Core.LogTypeSys:
-		return "SYS"
-	default:
-		return "LOG"
-	}
+	return layoutTypeCode(e)
 }
 
 // CYLoggerTemplateLayout3 is built-in layout with channel and minimal info.
@@ -252,41 +303,84 @@ func (l *CYLoggerTemplateLayout3) GetFormatMessage(strChannel string, eMsgType C
 	bEscape bool) string {
 
 	var sb strings.Builder
-	sb.WriteString("[")
+	hs := Common.LogHeaderStart
+	he := Common.LogHeaderEnd
+	fv := Common.LogFieldValueEnd
+	fn := Common.LogFieldNameEnd
+	ev := Common.LogExtensionFieldValueEnd
+
+	// [Time]
+	sb.WriteRune(hs)
 	sb.WriteString(l.GetTimeStamps(nYY, nMM, nDD, nHR, nMN, nSC, nMMN))
-	sb.WriteString("][")
-	sb.WriteString(l.typeName(eMsgType))
-	sb.WriteString("][")
-	sb.WriteString(strChannel)
-	sb.WriteString("] ")
+	sb.WriteRune(he)
+
+	// |Type[:SeverCode]
+	sb.WriteRune(fv)
+	if nSeverCode >= 0 {
+		sb.WriteString(layoutTypeCode(eMsgType))
+		sb.WriteRune(':')
+		sb.WriteString(strconv.Itoa(nSeverCode))
+	} else {
+		sb.WriteString(layoutTypeCode(eMsgType))
+	}
+
+	// |P:pid
+	sb.WriteRune(fv)
+	sb.WriteString("P:")
+	sb.WriteString(strconv.FormatUint(nProcessId, 10))
+
+	// |T:tid
+	sb.WriteRune(fv)
+	sb.WriteString("T:")
+	sb.WriteString(strconv.FormatUint(nThreadId, 10))
+
+	// |Key=Value#... (extension field)
+	if bEscape && l.escape != nil {
+		if ext := l.escape.FilterRequest(&strMsg, l.GetDelimiters(), l.GetEscapeChar(), fn, ev); ext != "" {
+			sb.WriteRune(fv)
+			sb.WriteString(ext)
+		}
+	}
+
+	// |func(line)]
+	sb.WriteRune(fv)
+	sb.WriteString(strFunction)
+	sb.WriteRune('(')
+	sb.WriteString(strconv.Itoa(nLine))
+	sb.WriteRune(')')
+	sb.WriteRune(he)
+
+	if strChannel != "" {
+		sb.WriteRune(hs)
+		sb.WriteString("Channel:")
+		sb.WriteString(strChannel)
+		sb.WriteRune(he)
+	}
+
+	if nSeverCode >= 0 {
+		sb.WriteRune(hs)
+		sb.WriteString("ServerCode:")
+		sb.WriteString(strconv.Itoa(nSeverCode))
+		sb.WriteRune(he)
+	}
+
 	sb.WriteString(strMsg)
+
+	//  - [file(line)]
+	sb.WriteString(" - ")
+	sb.WriteRune(hs)
+	sb.WriteString(layoutBaseName(strFile))
+	sb.WriteRune('(')
+	sb.WriteString(strconv.Itoa(nLine))
+	sb.WriteRune(')')
+	sb.WriteRune(he)
+
 	sb.WriteString("\n")
 	return sb.String()
 }
 
 func (l *CYLoggerTemplateLayout3) typeName(e Core.ELogType) string {
-	switch e {
-	case Core.LogTypeTrace:
-		return "TRACE"
-	case Core.LogTypeDebug:
-		return "DEBUG"
-	case Core.LogTypeInfo:
-		return "INFO"
-	case Core.LogTypeWarn:
-		return "WARN"
-	case Core.LogTypeError:
-		return "ERROR"
-	case Core.LogTypeFatal:
-		return "FATAL"
-	case Core.LogTypeMain:
-		return "MAIN"
-	case Core.LogTypeRemote:
-		return "REMOTE"
-	case Core.LogTypeSys:
-		return "SYS"
-	default:
-		return "LOG"
-	}
+	return layoutTypeCode(e)
 }
 
 // CYLoggerTemplateLayoutCustom wraps a user-provided layout.
@@ -388,4 +482,37 @@ func (m *CYLoggerTemplateLayoutManager) RegisterLayout(nIndex int32, pLayout ICY
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.layouts[nIndex] = pLayout
+}
+
+// layoutTypeCode maps a log type to its single-character C++ code used in all
+// built-in layouts (T/D/I/W/E/F, plus M/R/S for Main/Remote/Sys).
+func layoutTypeCode(e Core.ELogType) string {
+	switch e {
+	case Core.LogTypeTrace:
+		return "T"
+	case Core.LogTypeDebug:
+		return "D"
+	case Core.LogTypeInfo:
+		return "I"
+	case Core.LogTypeWarn:
+		return "W"
+	case Core.LogTypeError:
+		return "E"
+	case Core.LogTypeFatal:
+		return "F"
+	case Core.LogTypeMain:
+		return "M"
+	case Core.LogTypeRemote:
+		return "R"
+	case Core.LogTypeSys:
+		return "S"
+	default:
+		return "U"
+	}
+}
+
+// layoutBaseName returns the file base name, mirroring the C++ GetFileName used
+// by the built-in layouts.
+func layoutBaseName(s string) string {
+	return filepath.Base(s)
 }

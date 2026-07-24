@@ -15,6 +15,12 @@ A high-performance, async, multi-level logging library for Go, inspired by the [
 - **Statistics**: Per-type line/byte counters and FPS tracking
 - **Thread-safe**: Safe for concurrent use from multiple goroutines
 - **Cross-platform**: Linux, macOS, Windows
+- **One-line init**: `InitDefault(path)` + top-level `Trace/Debug/.../Scope()` functions with automatic `file:line` capture (`runtime.Caller`)
+- **Hex & Escape logging**: Top-level `HexInfo`, `EscapeInfo`, etc. for binary dumps and safe escaping
+- **Crash logging**: `InitException` + `defer Recover()` / `SafeGo` captures panics with full stack traces to a dedicated file
+- **Lightweight synchronous log**: `SimpleLog` for file/console output that bypasses the async channel (ideal for crash logs)
+- **FTP upload**: `UpLoadConfig` + `UploadLogFTP` to archive and push log files to an FTP server (pure standard library)
+- **Encryption**: `NewAESEncryptor` (AES-256-GCM) and pluggable `IEncryption` factory for optional payload encryption
 
 ## Requirements
 
@@ -28,40 +34,34 @@ go get github.com/maxhaosl/CYGoLogger
 
 ## Quick Start
 
+The fastest way — **one line** auto-mounts the console appender plus a full set
+of rotated file appenders (Trace/Debug/Info/Warn/Error/Fatal/Main) under the
+given path, mirroring the C++ `CY_LOG_CONFIG` macro. No manual `AddAppender`
+calls needed:
+
 ```go
 package main
 
 import (
-    "fmt"
     gologger "github.com/maxhaosl/CYGoLogger/ICYLogger"
 )
 
 func main() {
-    // Initialize: log path, show console
-    ok := gologger.InitLogger("./Log", true)
-    if !ok {
-        fmt.Println("Failed to initialize logger")
-        return
-    }
-    defer gologger.UnInitLogger()
+    // ONE line: console + all file appenders under ./Log
+    gologger.InitDefault("./Log")
+    defer gologger.Close()
 
-    // Add file appenders
-    gologger.GetInstance().AddAppender(
-        gologger.LogTypeInfo, "app", "Info.log", gologger.LogFileModeAppend)
-    gologger.GetInstance().AddAppender(
-        gologger.LogTypeError, "app", "Error.log", gologger.LogFileModeAppend)
-
-    // Log messages
-    gologger.LOG_INFO("Application started")
-    gologger.LOG_DEBUG("Debug info: version=%s", "1.0.0")
-    gologger.LOG_WARN("This is a warning: id=%d", 42)
-    gologger.LOG_ERROR("Error occurred: code=%d", 500)
-    gologger.LOG_FATAL("Fatal error: aborting")
-
-    // Flush and cleanup
-    gologger.FlushLogger()
+    // Log messages (caller file:line captured automatically)
+    gologger.Info("Application started")
+    gologger.Debug("Debug info: version=%s", "1.0.0")
+    gologger.Warn("This is a warning: id=%d", 42)
+    gologger.Error("Error occurred: code=%d", 500)
+    gologger.Fatal("Fatal error: aborting")
 }
 ```
+
+> Prefer the classic C-style API? `InitLogger` + `LOG_*` macros + manual
+> `AddAppender` still work exactly as before (see [Log Macros](#log-macros)).
 
 ## Log Types
 
@@ -108,6 +108,135 @@ gologger.LOG_MAIN("Main message")
 gologger.LOG_SYS("Sys message")
 gologger.LOG_REMOTE("Remote message")
 ```
+
+## One-Line Initialization & Top-Level API
+
+For the most common cases you only need **one import and one line**:
+
+```go
+import gologger "github.com/maxhaosl/CYGoLogger/ICYLogger"
+
+func main() {
+    gologger.InitDefault("./Log")   // zero-config: console + rotated file, level FILTER_ALL
+    defer gologger.Close()          // flushes and releases everything
+
+    gologger.Info("Application started: v%s", "1.0.0")
+    gologger.Debug("Debug info: count=%d", 10)
+    gologger.Warn("This is a warning")
+    gologger.Error("Error occurred: code=%d", 500)
+
+    // Hex dump (one call, auto file:line)
+    gologger.HexInfo([]byte{0x48, 0x65, 0x6c, 0x6c, 0x6f})
+
+    // Escape special characters safely
+    gologger.EscapeInfo("Message with [brackets] and ]more[")
+}
+```
+
+Top-level convenience functions (all capture the caller `file:line` automatically):
+
+| Function family | Levels / Types |
+|-----------------|----------------|
+| `Trace/Debug/Info/Warn/Error/Fatal` | formatted (`fmt.Sprintf`) logging per level |
+| `Main/Remote/Sys` | formatted logging to Main / Remote / Sys types |
+| `HexTrace/HexDebug/.../HexFatal/HexMain/HexRemote/HexSys` | hex-dump a `[]byte` payload per level/type |
+| `EscapeTrace/EscapeDebug/.../EscapeFatal/EscapeMain/EscapeRemote/EscapeSys` | escape special chars then log per level/type |
+| `Flush()` / `FlushType(t)` | flush the async queue (all / by type) |
+| `Close()` | flush + `UnInitLogger`, call in `defer` |
+
+### Runtime Configuration Shortcuts
+
+Configure the logger at runtime with one-line calls (no `GetInstance()` boilerplate):
+
+```go
+// Toggle Remote / Sys appender on the fly
+gologger.SetWriteRemote(true)   // mounts TCP/UDP remote appender
+gologger.SetWriteSys(true)      // mounts syslog appender
+
+// Switch log level at runtime
+gologger.SetLogLevel(gologger.LogFilterErrors)
+
+// Apply a custom PatternFilter
+filter := gologger.NewPatternFilter(",;|", "CSV", "PATTERN_CSV", gologger.TupleFieldType_CSV)
+gologger.SetFilter(filter)
+
+// Change layout format
+gologger.SetLayout(gologger.LogLayoutTypeBuildin2)
+```
+
+> The classic `LOG_*` macros and `GetInstance().WriteLog*` methods remain fully supported (backward compatible).
+
+## Crash (Exception) Logging
+
+Capture panics with full stack traces into a dedicated, synchronous exception log file — independent of the async main channel, so it still works when the program is about to crash.
+
+```go
+// Enable crash logging (writes ./Log/Exception.log)
+gologger.InitException("./Log")
+
+// Option A: defer the helper at the top of any function
+func risky() {
+    defer gologger.Recover()
+    mayPanic()
+}
+
+// Option B: run a goroutine safely (panics are caught automatically)
+gologger.SafeGo(func() { backgroundWork() })
+
+// Option C: custom panic handler
+gologger.SetPanicHandler(func(recv any, stack string) {
+    fmt.Fprintln(os.Stderr, "PANIC:", recv)
+})
+
+// Optional: re-throw after logging (default: swallow)
+gologger.SetPanicRethrow(true)
+```
+
+Under the hood `Recover()` calls `recover()` directly inside the deferred function, and background goroutines spawned via `CYNamedThread`/`SafeGo` route their panics to the same exception log.
+
+## Lightweight Synchronous Log (SimpleLog)
+
+`SimpleLog` writes **synchronously** (no async queue), perfect for crash logs or tiny helper tools:
+
+```go
+lg := gologger.NewCYSimpleLogFile()
+lg.InitLog("./Log/simple.log", gologger.SimpleLogTypeFile)
+lg.WriteString("immediate, no buffering\n")
+lg.WriteLog("formatted %d", 42)
+lg.CloseLog()
+lg.DeleteAllFile() // remove all files created by this logger
+```
+
+`SimpleLogTypeNone/File/Console/All` controls the destination; `CYSimpleLogConsole` adds ANSI colors.
+
+## FTP Upload
+
+Archive or push log files to an FTP server using a pure standard-library client (no third-party dependency):
+
+```go
+cfg := gologger.UpLoadConfig{
+    Host: "ftp.example.com", Port: 21,
+    User: "user", Password: "pass",
+    RemoteDir: "/logs", TimeoutSec: 30, Passive: true,
+}
+if err := gologger.UploadLogFTP("./Log/app_20240101.log", cfg); err != nil {
+    gologger.Error("upload failed: %v", err)
+}
+```
+
+The `IUpLoad` interface and `GetCYUpLoadFactoryInstance()` factory allow adding other backends (S3, etc.) later.
+
+## Encryption
+
+Pluggable `IEncryption` with an AES-256-GCM sample. Useful for encrypting payloads before writing/archiving:
+
+```go
+enc := gologger.NewAESEncryptor("my-secret-passphrase")
+cipher, _ := enc.Encrypt([]byte("plain text"))
+plain, _ := enc.Decrypt(cipher) // -> "plain text"
+```
+
+`GetCYEncryptionFactoryInstance()` provides the factory; `EncryptionTypeNone` is a pass-through.
 
 ## Structured Logging
 
@@ -206,9 +335,13 @@ for i := 0; i < 5; i++ {
 
 ```
 ICYLogger/
-├── inc.go                  # Single import entry point
+├── inc.go                  # Single import entry point (re-exports everything)
+├── api.go                  # Top-level InitDefault/Info/Hex*/Escape*/Recover/Close
 ├── Core/types.go           # Enums and constants
-├── Common/common.go        # Message types, FPS counter, utilities
+├── Common/
+│   ├── common.go           # Message types, FPS counter, utilities, goroutine wrapper
+│   ├── simplelog.go        # CYSimpleLogFile / CYSimpleLogConsole (sync log)
+│   └── exception.go        # CYExceptionLogFile, Recover/SafeGo, panic capture
 ├── Filter/filter.go        # Pattern filter chain
 ├── Layout/
 │   ├── interfaces.go       # ICYLogger, ICYLoggerTemplateLayout interfaces
@@ -216,10 +349,15 @@ ICYLogger/
 ├── Config/config.go        # Global configuration singleton
 ├── Statistics/statistics.go # Atomic line/byte/FPS counters
 ├── Entity/entity.go        # Appender container and factory
-├── Appender/appender.go    # 6 appender types
+├── Appender/appender.go    # 6 appender types (console/file/main/buffer/remote/system)
+├── UpLoad/
+│   ├── upload.go           # IUpLoad interface + factory
+│   └── ftp.go              # CYFTPUpLoad (pure stdlib FTP client)
+├── Encryption/
+│   └── encryption.go       # IEncryption interface, factory, AES-GCM sample
 ├── Logger/logger.go       # CYLoggerControl and CYLoggerImpl
 └── Schedule/
-    └── CYLoggerSchedule.go # Background expired-file cleanup
+    └── CYLoggerSchedule.go # Background expired-file cleanup + zip
 ```
 
 ## License

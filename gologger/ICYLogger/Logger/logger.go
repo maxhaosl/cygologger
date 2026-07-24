@@ -34,6 +34,8 @@ package logger
 
 import (
 	"fmt"
+	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -45,7 +47,6 @@ import (
 	"github.com/maxhaosl/CYGoLogger/ICYLogger/Entity"
 	"github.com/maxhaosl/CYGoLogger/ICYLogger/Appender"
 	"github.com/maxhaosl/CYGoLogger/ICYLogger/Schedule"
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Config"
 	"github.com/maxhaosl/CYGoLogger/ICYLogger/Statistics"
 )
 
@@ -53,6 +54,7 @@ import (
 type CYLoggerControl struct {
 	Common.CYNoCopy
 	mu          sync.RWMutex
+	restrictionMu sync.Mutex
 	eLogLevel   Core.ELogLevelFilter
 	szLogPath   string
 	entities    map[Core.ELogType]*Entity.CYLoggerEntity
@@ -82,7 +84,8 @@ func GetCYLoggerControlInstance() *CYLoggerControl {
 	return g_CYLoggerControlInstance
 }
 
-func (c *CYLoggerControl) Init(szLogPath string, bShowConsole, bWriteRemote, bWriteSys bool) bool {
+func (c *CYLoggerControl) Init(szLogPath string, bShowConsole, bWriteRemote, bWriteSys bool,
+	eFileMode Core.ELogFileMode, szRemoteAddr string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -94,18 +97,63 @@ func (c *CYLoggerControl) Init(szLogPath string, bShowConsole, bWriteRemote, bWr
 		if c.consoleApp != nil {
 			c.consoleApp.UnInit()
 		}
-		c.consoleApp = Appender.GetCYLoggerAppenderFactoryInstance().CreateConsoleAppender(Core.LogTypeConsole, "", "", szLogPath, Core.LogFileModeAppend)
+		c.consoleApp = Appender.GetCYLoggerAppenderFactoryInstance().CreateConsoleAppender(Core.LogTypeConsole, "", "", szLogPath, eFileMode)
 		c.consoleApp.SetLayout(c.layout)
 		c.consoleApp.SetFilter(c.filter)
 	}
 
+	// Auto-mount per-type file appenders, mirroring the C++ CY_LOG_APPENDER macro
+	// which attaches Trace/Debug/Info/Warn/Error/Fatal/Main file appenders in one shot.
+	// If the caller already registered an appender for a type (manual AddAppender),
+	// auto-mounting skips it to avoid duplicates.
+	fileTypes := []Core.ELogType{
+		Core.LogTypeTrace, Core.LogTypeDebug, Core.LogTypeInfo,
+		Core.LogTypeWarn, Core.LogTypeError, Core.LogTypeFatal, Core.LogTypeMain,
+	}
+	for _, t := range fileTypes {
+		if !c.hasAppender(t) {
+			c.AddAppender(t, "", "", eFileMode)
+		}
+	}
+	if bWriteSys && !c.hasAppender(Core.LogTypeSys) {
+		c.AddAppender(Core.LogTypeSys, "", "", eFileMode)
+	}
+	if bWriteRemote && !c.hasAppender(Core.LogTypeRemote) {
+		c.AddAppender(Core.LogTypeRemote, "", szRemoteAddr, eFileMode)
+	}
+
+	// Apply the restriction configuration stored in CYLoggerConfig to the runtime
+	// restriction object so a single Init applies the same defaults/options as C++.
+	cfg := Core.GetCYLoggerConfigInstance()
+	c.SetRestriction(cfg.IsLimitEnable(), cfg.IsClearUnLogFile(),
+		cfg.GetTimeClearLog(), cfg.GetTimeExpiredFile(),
+		cfg.GetCheckFileSizeTime(), cfg.GetCheckFileCountTime(),
+		cfg.GetCheckFileSize(), cfg.GetCountPerType(),
+		cfg.GetCheckFileTypeSize(), cfg.GetCheckAllFileSize())
+
 	if c.schedule == nil {
 		c.schedule = Schedule.GetCYLoggerScheduleInstance()
-		c.schedule.Init(szLogPath, Core.DefaultLogTimeExpiredFile)
+		c.schedule.Init(szLogPath, cfg.GetTimeExpiredFile())
+		c.schedule.SetClearPeriodSec(cfg.GetClearPeriodSec())
 	}
+	c.schedule.SetRestriction(
+		c.restriction.GetFileCountPerType(),
+		c.restriction.GetCheckFileTypeSize(),
+		c.restriction.GetCheckAllFileSize(),
+	)
+	c.schedule.SetClearUnLogFile(c.restriction.IsClearUnLogFile())
 	c.schedule.StartSchedule()
 
 	return true
+}
+
+// hasAppender reports whether the entity for eLogType already holds an appender,
+// so auto-mounting never duplicates a manually registered appender.
+func (c *CYLoggerControl) hasAppender(eLogType Core.ELogType) bool {
+	if e := c.entities[eLogType]; e != nil {
+		return e.GetAppenderCount() > 0
+	}
+	return false
 }
 
 func (c *CYLoggerControl) UnInit() {
@@ -204,6 +252,15 @@ func (c *CYLoggerControl) Write(msg *Common.CYBaseMessage) {
 		logEntity.Write(msg)
 	}
 
+	// Aggregate every message into the Main log, mirroring the C++ Main appender
+	// behaviour. A message whose own type is Main is already written above, so it
+	// is skipped here to avoid duplication.
+	if eMsgType != Core.LogTypeMain {
+		if mainEntity := c.entities[Core.LogTypeMain]; mainEntity != nil {
+			mainEntity.Write(msg)
+		}
+	}
+
 	Statistics.GetCYStatisticsInstance().IncrementLine(eMsgType, uint64(len(msg.StrMsg)))
 }
 
@@ -236,6 +293,37 @@ func (c *CYLoggerControl) passesFilter(nLogLevel Core.ELogLevel) bool {
 	return int(c.eLogLevel)&int(nLogLevel) != 0
 }
 
+// WriteDirect writes a message directly to the entity, bypassing level filtering.
+// This is the Go equivalent of C++ CY_LOG_DIRECT_* macros.
+func (c *CYLoggerControl) WriteDirect(eMsgType Core.ELogType, msg *Common.CYBaseMessage) {
+	if msg == nil {
+		return
+	}
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	// Bypass level filter — always write to console and target entity.
+	if c.consoleApp != nil && c.consoleApp.IsEnable() {
+		c.consoleApp.Write(msg)
+	}
+
+	if logEntity := c.entities[eMsgType]; logEntity != nil {
+		logEntity.Write(msg)
+	}
+
+	// Aggregate every message into the Main log, mirroring the C++ Main appender
+	// behaviour. A message whose own type is Main is already written above, so it
+	// is skipped here to avoid duplication.
+	if eMsgType != Core.LogTypeMain {
+		if mainEntity := c.entities[Core.LogTypeMain]; mainEntity != nil {
+			mainEntity.Write(msg)
+		}
+	}
+
+	Statistics.GetCYStatisticsInstance().IncrementLine(eMsgType, uint64(len(msg.StrMsg)))
+}
+
 func (c *CYLoggerControl) SetLogLevel(eFilter Core.ELogLevelFilter) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -262,8 +350,8 @@ func (c *CYLoggerControl) SetLayout(eType Core.ELogLayoutType, pLayout Layout.IC
 
 func (c *CYLoggerControl) SetRestriction(bEnable, bClear bool,
 	nTimeClear, nTimeExpired, nSizeTime, nCountTime, nSize, nCount, nTypeSize, nAllSize int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.restrictionMu.Lock()
+	defer c.restrictionMu.Unlock()
 	if c.restriction != nil {
 		c.restriction.SetRestriction(bEnable, bClear, nTimeClear, nTimeExpired, nSizeTime, nCountTime, nSize, nCount, nTypeSize, nAllSize)
 	}
@@ -276,7 +364,7 @@ type CYLoggerImpl struct {
 	bInit   atomic.Bool
 	bExit   atomic.Bool
 	control *CYLoggerControl
-	config  *Config.CYLoggerConfig
+	config  *Core.CYLoggerConfig
 }
 
 var (
@@ -301,10 +389,11 @@ func (l *CYLoggerImpl) Init() bool {
 		return true
 	}
 
-l.config = Config.GetCYLoggerConfigInstance()
+	l.config = Core.GetCYLoggerConfigInstance()
 	l.control = GetCYLoggerControlInstance()
 
-	if !l.control.Init(l.config.GetLogPath(), l.config.IsShowConsole(), l.config.IsWriteRemote(), l.config.IsWriteSys()) {
+	if !l.control.Init(l.config.GetLogPath(), l.config.IsShowConsole(), l.config.IsWriteRemote(), l.config.IsWriteSys(),
+		l.config.GetFileMode(), l.config.GetRemoteAddr()) {
 		return false
 	}
 
@@ -468,7 +557,7 @@ func formatHex(data []byte) string {
 
 func (l *CYLoggerImpl) SetConfig(szLogPath string, bShowConsoleWindow bool) {
 	if l.config == nil {
-		l.config = Config.GetCYLoggerConfigInstance()
+		l.config = Core.GetCYLoggerConfigInstance()
 	}
 	l.config.SetLogPath(szLogPath)
 	l.config.SetShowConsole(bShowConsoleWindow)
@@ -504,6 +593,32 @@ func (l *CYLoggerImpl) GetStats(pStats *Core.STStatistics) bool {
 	return Statistics.GetCYStatisticsInstance().GetStats(pStats)
 }
 
+// ForceNewFile forces every log entity to rotate to a fresh file (mirrors C++ ForceEntityNewFile).
+func (l *CYLoggerImpl) ForceNewFile() {
+	Entity.GetCYLoggerEntityFactoryInstance().ForceEntityNewFile()
+}
+
+// GetLoggerEntity returns the entity registered for eLogType, mirroring C++ GetLoggerEntity.
+func (l *CYLoggerImpl) GetLoggerEntity(eLogType Core.ELogType) *Entity.CYLoggerEntity {
+	return Entity.GetCYLoggerEntityFactoryInstance().GetLoggerEntity(eLogType)
+}
+
+// ReleaseLoggerEntity flushes, detaches and removes the entity for eLogType,
+// mirroring C++ ReleaseLoggerEntity.
+func (l *CYLoggerImpl) ReleaseLoggerEntity(eLogType Core.ELogType) {
+	Entity.GetCYLoggerEntityFactoryInstance().ReleaseLoggerEntity(eLogType)
+}
+
+// ResetLogFile forces every file appender to rotate to a fresh file (C++ ResetLogFile).
+func (l *CYLoggerImpl) ResetLogFile() {
+	Schedule.GetCYLoggerScheduleInstance().ResetLogFile()
+}
+
+// AddLogType records an extra log type tracked by the schedule (C++ AddLogType).
+func (l *CYLoggerImpl) AddLogType(eLogType Core.ELogType) {
+	Schedule.GetCYLoggerScheduleInstance().AddLogType(eLogType)
+}
+
 func (l *CYLoggerImpl) GetLogLevel() Core.ELogLevelFilter {
 	if l.config != nil {
 		return l.config.GetLogLevelFilter()
@@ -524,6 +639,132 @@ func (l *CYLoggerImpl) IsInit() bool {
 	return l.bInit.Load()
 }
 
+// ---- Direct logging (bypasses level filter) ----
+
+// WriteLogDirect writes a raw log message directly to the target entity, bypassing level filtering.
+func (l *CYLoggerImpl) WriteLogDirect(eMsgType Core.ELogType, nSeverCode int, szMsg string) {
+	if !l.bInit.Load() || l.bExit.Load() {
+		return
+	}
+	if l.control == nil {
+		return
+	}
+	msg := Common.AcquireBaseMessage()
+	msg.EMsgType = int(eMsgType)
+	msg.NSeverCode = nSeverCode
+	msg.StrMsg = szMsg
+	msg.Time = time.Now()
+	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
+	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	l.control.WriteDirect(eMsgType, msg)
+	Common.ReleaseBaseMessage(msg)
+}
+
+// WriteLogFmtDirect writes a formatted log message directly to the target entity, bypassing level filtering.
+func (l *CYLoggerImpl) WriteLogFmtDirect(eMsgType Core.ELogType, nSeverCode int,
+	pszFile, pszFuncName string, nLine int, szMsg string, args ...any) {
+
+	if !l.bInit.Load() || l.bExit.Load() {
+		return
+	}
+	if l.control == nil {
+		return
+	}
+	formatted := szMsg
+	if len(args) > 0 {
+		formatted = fmt.Sprintf(szMsg, args...)
+	}
+	msg := Common.AcquireBaseMessage()
+	msg.EMsgType = int(eMsgType)
+	msg.NSeverCode = nSeverCode
+	msg.StrMsg = formatted
+	msg.StrFile = pszFile
+	msg.StrFunc = pszFuncName
+	msg.NLine = nLine
+	msg.Time = time.Now()
+	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
+	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	l.control.WriteDirect(eMsgType, msg)
+	Common.ReleaseBaseMessage(msg)
+}
+
+// WriteEscapeLogFmtDirect writes an escape-formatted log message directly, bypassing level filtering.
+func (l *CYLoggerImpl) WriteEscapeLogFmtDirect(eMsgType Core.ELogType, nSeverCode int,
+	pszFile, pszFuncName string, nLine int, szMsg string, args ...any) {
+
+	if !l.bInit.Load() || l.bExit.Load() {
+		return
+	}
+	if l.control == nil {
+		return
+	}
+	formatted := szMsg
+	if len(args) > 0 {
+		formatted = fmt.Sprintf(szMsg, args...)
+	}
+	msg := Common.AcquireEscapeMessage()
+	msg.EMsgType = int(eMsgType)
+	msg.NSeverCode = nSeverCode
+	msg.StrMsg = formatted
+	msg.StrFile = pszFile
+	msg.StrFunc = pszFuncName
+	msg.NLine = nLine
+	msg.Time = time.Now()
+	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
+	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	l.control.WriteDirect(eMsgType, &msg.CYBaseMessage)
+	Common.ReleaseEscapeMessage(msg)
+}
+
+// WriteHexLogDirect writes hex-formatted log data directly, bypassing level filtering.
+func (l *CYLoggerImpl) WriteHexLogDirect(eMsgType Core.ELogType, nSeverCode int,
+	pszFile, pszFuncName string, nLine int, data []byte) {
+
+	if !l.bInit.Load() || l.bExit.Load() {
+		return
+	}
+	if l.control == nil {
+		return
+	}
+	hex := formatHex(data)
+	msg := Common.AcquireBaseMessage()
+	msg.EMsgType = int(eMsgType)
+	msg.NSeverCode = nSeverCode
+	msg.StrMsg = hex
+	msg.StrFile = pszFile
+	msg.StrFunc = pszFuncName
+	msg.NLine = nLine
+	msg.Time = time.Now()
+	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
+	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	l.control.WriteDirect(eMsgType, msg)
+	Common.ReleaseBaseMessage(msg)
+}
+
+// ---- Internal helpers ----
+
+// callerInfo captures the caller's file, function name, and line number.
+// skip=0 is callerInfo itself, skip=1 is its immediate caller, etc.
+func callerInfo(skip int) (file, funcName string, line int) {
+	pc, file, line, ok := runtime.Caller(skip)
+	if !ok {
+		return "???", "???", 0
+	}
+	funcName = runtime.FuncForPC(pc).Name()
+	// Shorten file to base name.
+	if idx := strings.LastIndex(file, "/"); idx >= 0 {
+		file = file[idx+1:]
+	}
+	if idx := strings.LastIndex(file, "\\"); idx >= 0 {
+		file = file[idx+1:]
+	}
+	// Keep only the last package-qualified function name segment.
+	if idx := strings.LastIndex(funcName, "/"); idx >= 0 {
+		funcName = funcName[idx+1:]
+	}
+	return
+}
+
 // ---- Public package-level convenience functions ----
 
 func InitLogger(szLogPath string, bShowConsoleWindow bool) bool {
@@ -538,6 +779,7 @@ func UnInitLogger() {
 
 func FreeInstance() {
 	UnInitLogger()
+	Statistics.GetCYStatisticsInstance().Reset()
 }
 
 func GetInstance() *CYLoggerImpl {
@@ -552,40 +794,102 @@ func FlushLoggerType(eType Core.ELogType) {
 	GetLoggerInstance().Flush(eType)
 }
 
-// ---- Logging convenience functions ----
+// ---- Logging convenience functions (auto caller info via runtime.Caller) ----
 
+// LOG_TRACE writes a trace-level log with automatic caller file/line/function capture.
 func LOG_TRACE(szMsg string, args ...any) {
-	GetLoggerInstance().WriteLogFmt(int(Core.LogLevelTrace), Core.LogTypeTrace, -1, "", "", 0, szMsg, args...)
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmt(int(Core.LogLevelTrace), Core.LogTypeTrace, -1, file, funcName, line, szMsg, args...)
 }
 
+// LOG_DEBUG writes a debug-level log with automatic caller file/line/function capture.
 func LOG_DEBUG(szMsg string, args ...any) {
-	GetLoggerInstance().WriteLogFmt(int(Core.LogLevelDebug), Core.LogTypeDebug, -1, "", "", 0, szMsg, args...)
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmt(int(Core.LogLevelDebug), Core.LogTypeDebug, -1, file, funcName, line, szMsg, args...)
 }
 
+// LOG_INFO writes an info-level log with automatic caller file/line/function capture.
 func LOG_INFO(szMsg string, args ...any) {
-	GetLoggerInstance().WriteLogFmt(int(Core.LogLevelInfo), Core.LogTypeInfo, -1, "", "", 0, szMsg, args...)
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmt(int(Core.LogLevelInfo), Core.LogTypeInfo, -1, file, funcName, line, szMsg, args...)
 }
 
+// LOG_WARN writes a warn-level log with automatic caller file/line/function capture.
 func LOG_WARN(szMsg string, args ...any) {
-	GetLoggerInstance().WriteLogFmt(int(Core.LogLevelWarn), Core.LogTypeWarn, -1, "", "", 0, szMsg, args...)
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmt(int(Core.LogLevelWarn), Core.LogTypeWarn, -1, file, funcName, line, szMsg, args...)
 }
 
+// LOG_ERROR writes an error-level log with automatic caller file/line/function capture.
 func LOG_ERROR(szMsg string, args ...any) {
-	GetLoggerInstance().WriteLogFmt(int(Core.LogLevelError), Core.LogTypeError, -1, "", "", 0, szMsg, args...)
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmt(int(Core.LogLevelError), Core.LogTypeError, -1, file, funcName, line, szMsg, args...)
 }
 
+// LOG_FATAL writes a fatal-level log with automatic caller file/line/function capture.
 func LOG_FATAL(szMsg string, args ...any) {
-	GetLoggerInstance().WriteLogFmt(int(Core.LogLevelFatal), Core.LogTypeFatal, -1, "", "", 0, szMsg, args...)
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmt(int(Core.LogLevelFatal), Core.LogTypeFatal, -1, file, funcName, line, szMsg, args...)
 }
 
+// LOG_MAIN writes a main-type log with automatic caller file/line/function capture.
 func LOG_MAIN(szMsg string, args ...any) {
-	GetLoggerInstance().WriteLogFmt(int(Core.LogLevelInfo), Core.LogTypeMain, -1, "", "", 0, szMsg, args...)
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmt(int(Core.LogLevelInfo), Core.LogTypeMain, -1, file, funcName, line, szMsg, args...)
 }
 
+// LOG_SYS writes a system-type log with automatic caller file/line/function capture.
 func LOG_SYS(szMsg string, args ...any) {
-	GetLoggerInstance().WriteLogFmt(int(Core.LogLevelSys), Core.LogTypeSys, -1, "", "", 0, szMsg, args...)
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmt(int(Core.LogLevelSys), Core.LogTypeSys, -1, file, funcName, line, szMsg, args...)
 }
 
+// LOG_REMOTE writes a remote-type log with automatic caller file/line/function capture.
 func LOG_REMOTE(szMsg string, args ...any) {
-	GetLoggerInstance().WriteLogFmt(int(Core.LogLevelRemote), Core.LogTypeRemote, -1, "", "", 0, szMsg, args...)
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmt(int(Core.LogLevelRemote), Core.LogTypeRemote, -1, file, funcName, line, szMsg, args...)
+}
+
+// ---- Direct logging convenience functions (bypass level filter, auto caller info) ----
+
+// LOG_DIRECT_TRACE writes a trace log directly, bypassing level filtering.
+func LOG_DIRECT_TRACE(szMsg string, args ...any) {
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmtDirect(Core.LogTypeTrace, -1, file, funcName, line, szMsg, args...)
+}
+
+// LOG_DIRECT_DEBUG writes a debug log directly, bypassing level filtering.
+func LOG_DIRECT_DEBUG(szMsg string, args ...any) {
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmtDirect(Core.LogTypeDebug, -1, file, funcName, line, szMsg, args...)
+}
+
+// LOG_DIRECT_INFO writes an info log directly, bypassing level filtering.
+func LOG_DIRECT_INFO(szMsg string, args ...any) {
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmtDirect(Core.LogTypeInfo, -1, file, funcName, line, szMsg, args...)
+}
+
+// LOG_DIRECT_WARN writes a warn log directly, bypassing level filtering.
+func LOG_DIRECT_WARN(szMsg string, args ...any) {
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmtDirect(Core.LogTypeWarn, -1, file, funcName, line, szMsg, args...)
+}
+
+// LOG_DIRECT_ERROR writes an error log directly, bypassing level filtering.
+func LOG_DIRECT_ERROR(szMsg string, args ...any) {
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmtDirect(Core.LogTypeError, -1, file, funcName, line, szMsg, args...)
+}
+
+// LOG_DIRECT_FATAL writes a fatal log directly, bypassing level filtering.
+func LOG_DIRECT_FATAL(szMsg string, args ...any) {
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmtDirect(Core.LogTypeFatal, -1, file, funcName, line, szMsg, args...)
+}
+
+// LOG_DIRECT_MAIN writes a main log directly, bypassing level filtering.
+func LOG_DIRECT_MAIN(szMsg string, args ...any) {
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmtDirect(Core.LogTypeMain, -1, file, funcName, line, szMsg, args...)
 }
