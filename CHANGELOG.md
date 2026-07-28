@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.4] - 2026-07-28
+
+### Changed
+
+- **`LOG_LEVEL_FILTER` now also gates file creation**: a log level disabled by the effective `ELogLevelFilter` no longer generates its dedicated `.log` file at `Init()`. Previously the filter only suppressed *writes* (via `CYLoggerControl.passesFilter` in `Write`), but the per-type file appenders were still mounted — so filtered-out types produced empty files. Now `CYLoggerControl.typeEnabledByFilter` is consulted while mounting appenders in `Init()`, so a suppressed type produces neither output nor a file, fully mirroring the C++ `LOG_LEVEL_FILTER` "suppressed level is fully turned off" semantics.
+  - `Main` is the aggregate of every enabled type and is therefore still mounted whenever any logging can occur (gated only by `EMode`, not by individual level bits).
+  - `Sys`/`Remote` file appenders are likewise gated by the filter (in addition to the `LOG_WRITE_SYS`/`LOG_WRITE_REMOTE` switches).
+  - In `ModeRelease`/`ModeDebug` the mode's own filter is authoritative, so behaviour there is unchanged.
+
+### Added
+
+- `ICYLogger/Logger/filter_test.go`: `TestLogLevelFilterSuppressesFileCreation` (only `Error`/`Fatal`/`Main` files for `LogFilterErrors`), `TestLogLevelFilterAllKeepsAllFiles` (all 6 + Main for `LogFilterAll`, regression guard), `TestLogLevelFilterWarnsAndErrors` (intermediate preset) — all run under the full `go test -race ./ICYLogger/...` suite.
+- **`examples/level_filter_test`**: standalone example (`go run .`, exits non-zero on failure) that verifies `LOG_LEVEL_FILTER` end-to-end across three filters — `LogFilterErrors`, `LogFilterWarnsAndErrors`, `LogFilterAll`:
+  - a filtered-out level produces **no** `*.log` file (file-existence assertion);
+  - an enabled level produces its file with the **correct layout type marker** (`|T|`/`|D|`/`|I|`/`|W|`/`|E|`/`|F|`) and its own message, and **no cross-type leak** (no other level's message appears in the file);
+  - the `Main` aggregate contains exactly the enabled levels' messages and none of the filtered ones.
+  - Picked up automatically by `Build/verify.sh` (runs `go run .` for every example dir), so it gates the one-click verification.
+
+### Known limitation
+
+- The filter is applied at `Init()` mount time. A level re-enabled at **runtime** via `SetLogLevel` (after `Init` with it disabled) will pass `passesFilter` but its file appender is not lazily mounted, so those messages are dropped until the next `Init`. On-demand lazy mounting is intentionally out of scope here; the typical usage sets the filter once before `Init`.
+
 ## [0.3.3] - 2026-07-28
 
 ### Added

@@ -50,6 +50,7 @@ type CYLoggerConfig struct {
 	eFileMode       ELogFileMode
 	eLayoutType     ELogLayoutType
 	eLogLevelFilter ELogLevelFilter
+	eMode           EMode
 
 	// szRemoteAddr is the remote log server address (host:port). It mirrors the
 	// C++ CY_LOG_APPENDER remote endpoint (default 127.0.0.1:7000).
@@ -90,6 +91,7 @@ func GetCYLoggerConfigInstance() *CYLoggerConfig {
 			eFileMode:       DefaultLogFileMode,
 			eLayoutType:     DefaultLogLayoutType,
 			eLogLevelFilter: DefaultLogLevelFilter,
+			eMode:           ModeAll,
 
 			szRemoteAddr:          "127.0.0.1:7000",
 			eRemoteProto:          RemoteProtoTCP,
@@ -232,6 +234,24 @@ func (c *CYLoggerConfig) GetLogLevelFilter() ELogLevelFilter {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.eLogLevelFilter
+}
+
+// SetMode sets the logger mode (Debug/Release switch). It controls which
+// log-type file appenders are mounted and the effective level filter:
+//   ModeDebug   -> Trace/Info/Warn/Error files, all four levels recorded
+//   ModeRelease -> Warn/Error files only; Trace/Info never created or recorded
+//   ModeAll     -> all built-in file types (Trace/Debug/Info/Warn/Error/Fatal/Main)
+func (c *CYLoggerConfig) SetMode(eMode EMode) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.eMode = eMode
+}
+
+// GetMode returns the logger mode.
+func (c *CYLoggerConfig) GetMode() EMode {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.eMode
 }
 
 // =============================================================================

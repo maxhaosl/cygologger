@@ -43,6 +43,7 @@ examples/simple_logger_test/simple_logger_test
 examples/simple_test/simple_test
 examples/feature_verify/feature_verify
 examples/stress_test/stress_test
+examples/level_filter_test/level_filter_test
 
 # Example runtime log output
 examples/**/logs/

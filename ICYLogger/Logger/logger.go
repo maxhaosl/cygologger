@@ -113,26 +113,45 @@ func (c *CYLoggerControl) Init(szLogPath string, bShowConsole, bWriteRemote, bWr
 	}
 	c.mu.Unlock()
 
-	// Auto-mount per-type file appenders, mirroring the C++ CY_LOG_APPENDER macro
-	// which attaches Trace/Debug/Info/Warn/Error/Fatal/Main file appenders in one
-	// shot. If the caller already registered an appender for a type (manual
-	// AddAppender), auto-mounting skips it to avoid duplicates.
+	// Auto-mount per-type file appenders, mirroring the C++ CY_LOG_APPENDER macro.
+	// The exact set of mounted types is driven by the configured EMode so the
+	// retrieval project can switch between Debug (Trace/Info/Warn/Error, 4 files)
+	// and Release (Warn/Error only, 2 files; Trace/Info never created/recorded).
+	// ModeAll preserves the original behaviour (Trace/Debug/Info/Warn/Error/Fatal/Main).
 	//
 	// IMPORTANT: AddAppender locks c.mu itself, so we must NOT hold c.mu here —
 	// holding it across the call would deadlock (sync.RWMutex is not reentrant).
-	fileTypes := []Core.ELogType{
-		Core.LogTypeTrace, Core.LogTypeDebug, Core.LogTypeInfo,
-		Core.LogTypeWarn, Core.LogTypeError, Core.LogTypeFatal, Core.LogTypeMain,
+	// c.SetLogLevel also locks c.mu, so it is called here (outside the loop),
+	// never inside a c.mu-held section.
+	mode := cfg.GetMode()
+	var fileTypes []Core.ELogType
+	switch mode {
+	case Core.ModeRelease, Core.ModeProd:
+		// 发布/生产：仅 Error 文件，且只记录 Error 级别；Warn/Trace/Info 不挂载、
+		// 不创建文件、不产生任何记录（满足“Release 只输出 Error”）。
+		c.SetLogLevel(Core.ELogLevelFilter(Core.LogLevelError))
+		fileTypes = []Core.ELogType{Core.LogTypeError}
+	case Core.ModeDebug:
+		c.SetLogLevel(Core.ELogLevelFilter(Core.LogLevelTrace | Core.LogLevelInfo | Core.LogLevelWarn | Core.LogLevelError))
+		fileTypes = []Core.ELogType{Core.LogTypeTrace, Core.LogTypeInfo, Core.LogTypeWarn, Core.LogTypeError}
+	default: // ModeAll — backward compatible
+		c.SetLogLevel(cfg.GetLogLevelFilter())
+		fileTypes = []Core.ELogType{
+			Core.LogTypeTrace, Core.LogTypeDebug, Core.LogTypeInfo,
+			Core.LogTypeWarn, Core.LogTypeError, Core.LogTypeFatal, Core.LogTypeMain,
+		}
 	}
 	for _, t := range fileTypes {
-		if !c.hasAppender(t) {
+		// Honour LOG_LEVEL_FILTER at mount time: a filtered-out type must not
+		// generate its file. (Write() still re-checks the filter per message.)
+		if c.typeEnabledByFilter(t) && !c.hasAppender(t) {
 			c.AddAppender(t, "", "", eFileMode)
 		}
 	}
-	if bWriteSys && !c.hasAppender(Core.LogTypeSys) {
+	if bWriteSys && c.typeEnabledByFilter(Core.LogTypeSys) && !c.hasAppender(Core.LogTypeSys) {
 		c.AddAppender(Core.LogTypeSys, "", "", eFileMode)
 	}
-	if bWriteRemote && !c.hasAppender(Core.LogTypeRemote) {
+	if bWriteRemote && c.typeEnabledByFilter(Core.LogTypeRemote) && !c.hasAppender(Core.LogTypeRemote) {
 		c.AddAppender(Core.LogTypeRemote, "", szRemoteAddr, eFileMode)
 	}
 
@@ -341,6 +360,20 @@ func (c *CYLoggerControl) levelForType(eMsgType Core.ELogType) Core.ELogLevel {
 
 func (c *CYLoggerControl) passesFilter(nLogLevel Core.ELogLevel) bool {
 	return int(c.eLogLevel)&int(nLogLevel) != 0
+}
+
+// typeEnabledByFilter reports whether eMsgType should be mounted as a file
+// appender given the effective level filter (c.eLogLevel). A level disabled by
+// the filter neither receives output nor causes its dedicated file to be created,
+// mirroring the C++ LOG_LEVEL_FILTER semantics where a suppressed level is fully
+// turned off (no file, no writes). Main is the aggregate of every enabled type, so
+// it is always mounted while any logging can occur — it is gated only by the
+// explicit EMode switch, not by individual level bits.
+func (c *CYLoggerControl) typeEnabledByFilter(eMsgType Core.ELogType) bool {
+	if eMsgType == Core.LogTypeMain {
+		return true
+	}
+	return int(c.eLogLevel)&int(c.levelForType(eMsgType)) != 0
 }
 
 // WriteDirect writes a message directly to the entity, bypassing level filtering.

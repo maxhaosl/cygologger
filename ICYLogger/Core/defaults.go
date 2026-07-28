@@ -87,6 +87,7 @@ func DefaultConfig() *CYLoggerConfig {
 		eFileMode:       LOG_FILE_MODE,
 		eLayoutType:     LOG_LAYOUT_TYPE,
 		eLogLevelFilter: LOG_LEVEL_FILTER,
+		eMode:           ModeAll,
 
 		szRemoteAddr:   "127.0.0.1:7000",
 		nClearPeriodSec: 60,
