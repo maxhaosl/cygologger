@@ -69,9 +69,9 @@ const (
 type ELogLevelFilter int
 
 const (
-	LogFilterAll             = ELogLevelFilter(LogLevelConsole | LogLevelTrace | LogLevelDebug | LogLevelInfo | LogLevelWarn | LogLevelError | LogLevelFatal)
-	LogFilterWarnsAndErrors = ELogLevelFilter(LogLevelInfo | LogLevelWarn | LogLevelError | LogLevelFatal)
-	LogFilterErrors         = ELogLevelFilter(LogLevelError | LogLevelFatal)
+	LogFilterAll                            = ELogLevelFilter(LogLevelConsole | LogLevelTrace | LogLevelDebug | LogLevelInfo | LogLevelWarn | LogLevelError | LogLevelFatal)
+	LogFilterWarnsAndErrors                 = ELogLevelFilter(LogLevelInfo | LogLevelWarn | LogLevelError | LogLevelFatal)
+	LogFilterErrors                         = ELogLevelFilter(LogLevelError | LogLevelFatal)
 	LogFilterNone           ELogLevelFilter = 0
 )
 
@@ -92,6 +92,7 @@ const (
 	LogLayoutTypeBuildin2 ELogLayoutType = 2
 	LogLayoutTypeBuildin3 ELogLayoutType = 3
 	LogLayoutTypeBuildin4 ELogLayoutType = 4 // [Time][TYPE|P:pid|T:tid][func(line)] Msg
+	LogLayoutTypeBuildin5 ELogLayoutType = 5
 )
 
 // STStatistics holds logging statistics counters (fully aligned with C++ CYLogger).
@@ -115,25 +116,25 @@ type STStatistics struct {
 	NConsolePublicFQueue uint32  // The console public fatal queue length.
 	NConsolePrivateQueue uint32  // The console private queue length.
 
-	NTraceLine        uint64  // The total number of lines written to the trace log.
-	NTraceByte        uint64  // Total bytes written to the trace log.
-	FTraceCurrentFps  float64 // The current fps written to the trace log.
-	FTraceAverageFps  float64 // The average fps written to the trace log.
-	NTracePublicQueue uint32  // The trace public queue length.
-	NTracePrivateQueue uint32 // The trace private queue length.
+	NTraceLine         uint64  // The total number of lines written to the trace log.
+	NTraceByte         uint64  // Total bytes written to the trace log.
+	FTraceCurrentFps   float64 // The current fps written to the trace log.
+	FTraceAverageFps   float64 // The average fps written to the trace log.
+	NTracePublicQueue  uint32  // The trace public queue length.
+	NTracePrivateQueue uint32  // The trace private queue length.
 
-	NDebugLine        uint64
-	NDebugByte        uint64
-	FDebugCurrentFps  float64
-	FDebugAverageFps  float64
-	NDebugPublicQueue uint32
+	NDebugLine         uint64
+	NDebugByte         uint64
+	FDebugCurrentFps   float64
+	FDebugAverageFps   float64
+	NDebugPublicQueue  uint32
 	NDebugPrivateQueue uint32
 
-	NInfoLine        uint64
-	NInfoByte        uint64
-	FInfoCurrentFps  float64
-	FInfoAverageFps  float64
-	NInfoPublicQueue uint32
+	NInfoLine         uint64
+	NInfoByte         uint64
+	FInfoCurrentFps   float64
+	FInfoAverageFps   float64
+	NInfoPublicQueue  uint32
 	NInfoPrivateQueue uint32
 
 	NWarnLine         uint64
@@ -192,23 +193,23 @@ type STStatistics struct {
 // Default configuration constants.
 const (
 	DefaultLogShowConsoleWindow = false
-	DefaultLogWriteRemote      = false
-	DefaultLogWriteSys         = false
-	DefaultLogFileMode         = LogFileModeTime
-	DefaultLogLayoutType       = LogLayoutTypeBuildin1
+	DefaultLogWriteRemote       = false
+	DefaultLogWriteSys          = false
+	DefaultLogFileMode          = LogFileModeTime
+	DefaultLogLayoutType        = LogLayoutTypeBuildin1
 )
 
 const (
-	DefaultLogLimitEnable          = true
+	DefaultLogLimitEnable         = true
 	DefaultLogLimitClearUnLogFile = true
 	DefaultLogTimeClearLog        = 60
-	DefaultLogTimeExpiredFile      = 24
-	DefaultLogCheckFileSizeTime    = 60 * 5
-	DefaultLogCheckFileCountTime   = 60
-	DefaultLogCheckFileSize        = 1024 * 1024 * 5
+	DefaultLogTimeExpiredFile     = 24
+	DefaultLogCheckFileSizeTime   = 60 * 5
+	DefaultLogCheckFileCountTime  = 60
+	DefaultLogCheckFileSize       = 1024 * 1024 * 5
 	DefaultLogCountPerType        = 20
 	DefaultLogCheckFileTypeSize   = 1024 * 1024 * 500
-	DefaultLogCheckAllFileSize     = 1024 * 1024 * 1024
+	DefaultLogCheckAllFileSize    = 1024 * 1024 * 1024
 )
 
 const DefaultLogLevelFilter = ELogLevelFilter(LogLevelConsole | LogLevelTrace | LogLevelDebug | LogLevelInfo | LogLevelWarn | LogLevelError | LogLevelFatal)

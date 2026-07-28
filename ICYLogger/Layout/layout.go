@@ -39,9 +39,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/maxhaosl/CYGoLogger/ICYLogger/Common"
 	"github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
 	"github.com/maxhaosl/CYGoLogger/ICYLogger/Filter"
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Common"
 )
 
 // builderPool reuses strings.Builder instances across GetFormatMessage calls to
@@ -556,6 +556,92 @@ func (l *CYLoggerTemplateLayout4) typeName(e Core.ELogType) string {
 	return layoutTypeCode(e)
 }
 
+// CYLoggerTemplateLayout5 is a custom layout: it mirrors
+// Buildin4 ([Time][TYPE|P:pid|T:tid][func(line)] Msg) but renders the channel
+// as a clearly labelled [CH:name] field. This makes it unambiguous which
+// subsystem produced a line — a submodule or SDK log carries [CH:name], while
+// the service program's own logs carry no [CH:...] bracket at all.
+type CYLoggerTemplateLayout5 struct {
+	CYLoggerTemplateLayoutEscape
+	escape *Filter.ICYLoggerPatternFilter
+}
+
+func NewCYLoggerTemplateLayout5() *CYLoggerTemplateLayout5 {
+	return &CYLoggerTemplateLayout5{}
+}
+
+func (l *CYLoggerTemplateLayout5) SetFilter(f *Filter.ICYLoggerPatternFilter) {
+	l.escape = f
+}
+
+func (l *CYLoggerTemplateLayout5) GetTypeIndex() int32 { return 5 }
+
+func (l *CYLoggerTemplateLayout5) GetTimeStamps(nYY, nMM, nDD, nHR, nMN, nSC, nMMN int) string {
+	return fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d.%03d", nYY, nMM, nDD, nHR, nMN, nSC, nMMN)
+}
+
+func (l *CYLoggerTemplateLayout5) GetFormatMessage(strChannel string, eMsgType Core.ELogType, nSeverCode int,
+	strMsg, strFile, strFunction string,
+	nLine int, nProcessId, nThreadId uint64,
+	nYY, nMM, nDD, nHR, nMN, nSC, nMMN int,
+	bEscape bool) string {
+
+	sb := builderPool.Get().(*strings.Builder)
+	sb.Reset()
+	sb.Grow(256)
+	hs := Common.LogHeaderStart
+	he := Common.LogHeaderEnd
+	fv := Common.LogFieldValueEnd
+
+	// [Time]
+	sb.WriteRune(hs)
+	appendTimestamp(sb, nYY, nMM, nDD, nHR, nMN, nSC, nMMN)
+	sb.WriteRune(he)
+
+	// [Type[:SeverCode]|P:pid|T:tid]
+	sb.WriteRune(hs)
+	sb.WriteString(layoutTypeCode(eMsgType))
+	if nSeverCode >= 0 {
+		sb.WriteRune(':')
+		appendInt(sb, nSeverCode)
+	}
+	sb.WriteRune(fv)
+	sb.WriteString("P:")
+	appendUint(sb, nProcessId)
+	sb.WriteRune(fv)
+	sb.WriteString("T:")
+	appendUint(sb, nThreadId)
+	sb.WriteRune(he)
+
+	// [CH:channel] — only when a channel is set; a missing bracket means the
+	// service program itself wrote the line (vs a submodule or SDK).
+	if strChannel != "" {
+		sb.WriteRune(hs)
+		sb.WriteString("CH:")
+		sb.WriteString(strChannel)
+		sb.WriteRune(he)
+	}
+
+	// [func(line)]
+	sb.WriteRune(hs)
+	sb.WriteString(strFunction)
+	sb.WriteRune('(')
+	appendInt(sb, nLine)
+	sb.WriteRune(')')
+	sb.WriteRune(he)
+	sb.WriteRune(' ')
+
+	sb.WriteString(strMsg)
+	sb.WriteString("\n")
+	out := sb.String()
+	builderPool.Put(sb)
+	return out
+}
+
+func (l *CYLoggerTemplateLayout5) typeName(e Core.ELogType) string {
+	return layoutTypeCode(e)
+}
+
 // CYLoggerTemplateLayoutCustom wraps a user-provided layout.
 type CYLoggerTemplateLayoutCustom struct {
 	CYLoggerTemplateLayoutEscape
@@ -570,7 +656,9 @@ func NewCYLoggerTemplateLayoutCustom(inner ICYLoggerTemplateLayout) *CYLoggerTem
 func (l *CYLoggerTemplateLayoutCustom) SetFilter(f *Filter.ICYLoggerPatternFilter) {
 	l.escape = f
 	if l.inner != nil {
-		if s, ok := l.inner.(interface{ SetFilter(*Filter.ICYLoggerPatternFilter) }); ok {
+		if s, ok := l.inner.(interface {
+			SetFilter(*Filter.ICYLoggerPatternFilter)
+		}); ok {
 			s.SetFilter(f)
 		}
 	}
@@ -624,6 +712,7 @@ func GetCYLoggerTemplateLayoutManagerInstance() *CYLoggerTemplateLayoutManager {
 		m.layouts[2] = NewCYLoggerTemplateLayout2()
 		m.layouts[3] = NewCYLoggerTemplateLayout3()
 		m.layouts[4] = NewCYLoggerTemplateLayout4()
+		m.layouts[5] = NewCYLoggerTemplateLayout5()
 		m.default_ = m.layouts[1]
 		g_CYLoggerTemplateLayoutManagerInstance = m
 	})

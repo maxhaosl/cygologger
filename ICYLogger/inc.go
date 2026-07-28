@@ -108,6 +108,7 @@ const (
 	LogLayoutTypeBuildin2 = Core.LogLayoutTypeBuildin2
 	LogLayoutTypeBuildin3 = Core.LogLayoutTypeBuildin3
 	LogLayoutTypeBuildin4 = Core.LogLayoutTypeBuildin4
+	LogLayoutTypeBuildin5 = Core.LogLayoutTypeBuildin5
 
 	LogFilterAll             = Core.LogFilterAll
 	LogFilterWarnsAndErrors = Core.LogFilterWarnsAndErrors
