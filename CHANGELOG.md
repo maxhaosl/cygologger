@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] - 2026-07-28
+
+### Added
+
+- **`examples/stress_test` correctness suite** (`correctness.go`, tests 9–12 — the suite now has 12 tests total, all runnable via `-test=all`):
+  - `alllevels` — writes all six levels (Trace/Debug/Info/Warn/Error/Fatal) concurrently and verifies, per level: the statistics counter, the on-disk line count, that **every** line carries the correct layout type code (`|T|`, `|D|`, …) and level marker (no cross-type mixing), that the Main log aggregates exactly 6×N lines, and that no line ever regresses to `T:0` (GetGID regression guard)
+  - `layout` — asserts the **exact full-line output format** of built-in layouts 1–4 via anchored regexes, both without and with a channel (`[Channel:X]` for layouts 1–3, bare `[X]` for layout 4)
+  - `channel` — 4 channels × 25 K lines + 25 K plain lines written concurrently; verifies exact per-channel counts, that plain lines carry no `Channel:` field, and the Main double-write total
+  - `filemode` — verifies `LogFileModeAppend` keeps a single fixed `Info.log` accumulating across `Init/Close` cycles, and `LogFileModeTime` produces one `Info_YYYYMMDD_HHMMSS.log` per start with the exact expected name pattern
+- `Build/verify.sh` now runs the full 12-test stress suite with short durations as a dedicated gate stage (`example:stress_test(12 tests)`)
+
+### Fixed
+
+- **`examples/stress_test` baseline**: `initLog` now also re-asserts `WithLayoutType(Buildin1)` — the config singleton retains the last layout across `Close()`, so in `-test=all` the `layout` test (which switches to Buildin4) previously leaked its layout into the subsequent `channel` test and broke the `[Channel:...]` assertions
+
+### Verified
+
+- Full suite 12/12 PASS: benchmark P50 9 µs @1 worker (~100 K lines/sec), zero loss from 1 to 2048 goroutines; `Build/verify.sh` PASS 20 / FAIL 0
+
+## [0.3.2] - 2026-07-28
+
+### Fixed
+
+- **`Common/common.go` (`GetGID`)**: the goroutine-ID parser split the stack header with `strings.Fields` and then searched for `"["` *inside* the word `"goroutine"`, which never matches — so `GetGID()` silently returned **0** for every goroutine and the `T:` (thread-id) field in every log line was always `T:0`. Now parses the digits directly from the raw `runtime.Stack` header (`"goroutine <id> ["`): correct IDs, zero intermediate allocations. Regression test added (`TestGetGID`)
+
+### Changed / Performance
+
+- **`Common/common.go` (`GetCurrentProcessId`)**: the PID is now captured once at startup instead of issuing a real `os.Getpid()` syscall per log line (visible in CPU profiles)
+- Single-goroutine throughput ≈103 K lines/sec (was ≈98 K); remaining per-line costs are the real disk `write(2)` (~38 % CPU, unavoidable) and `runtime.Stack` for the goroutine ID (~27 %, inherent — Go has no goroutine-local storage)
+- Full gate re-verified: `Build/verify.sh` PASS 20 / FAIL 0; `examples/stress_test` 8/8 zero-loss up to 2048 goroutines; library race-clean
+
 ## [0.3.1] - 2026-07-28
 
 ### Fixed

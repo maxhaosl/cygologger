@@ -29,7 +29,13 @@
 
 package Common
 
-import "testing"
+import (
+	"bytes"
+	"runtime"
+	"strconv"
+	"sync"
+	"testing"
+)
 
 // TestPublicFunctionPathUtils verifies the C++-aligned path helpers.
 func TestPublicFunctionPathUtils(t *testing.T) {
@@ -60,6 +66,48 @@ func TestRdtsc(t *testing.T) {
 	}
 	if a <= 0 {
 		t.Errorf("Rdtsc returned %d, want > 0", a)
+	}
+}
+
+// TestGetGID verifies GetGID parses the real goroutine ID from the stack
+// header (regression: an earlier implementation always returned 0 because it
+// searched for "[" inside the word "goroutine" after strings.Fields split).
+func TestGetGID(t *testing.T) {
+	// Reference: parse the header "goroutine <id> [" ourselves.
+	refGID := func() uint64 {
+		b := make([]byte, 64)
+		n := runtime.Stack(b, false)
+		rest := bytes.TrimPrefix(b[:n], []byte("goroutine "))
+		i := bytes.IndexByte(rest, ' ')
+		id, _ := strconv.ParseUint(string(rest[:i]), 10, 64)
+		return id
+	}
+
+	if got, want := GetGID(), refGID(); got == 0 || got != want {
+		t.Fatalf("GetGID = %d, want %d (nonzero)", got, want)
+	}
+
+	// Different goroutines must yield different, nonzero IDs.
+	const n = 8
+	ids := make([]uint64, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			ids[i] = GetGID()
+		}(i)
+	}
+	wg.Wait()
+	seen := map[uint64]bool{GetGID(): true}
+	for i, id := range ids {
+		if id == 0 {
+			t.Errorf("goroutine %d: GetGID returned 0", i)
+		}
+		if seen[id] {
+			t.Errorf("goroutine %d: duplicate GID %d", i, id)
+		}
+		seen[id] = true
 	}
 }
 

@@ -65,6 +65,15 @@ for d in examples/*/; do
                 record "example:config_verify($opt)" 1
             fi
         done
+    elif [ "$name" = "stress_test" ]; then
+        # Full 12-test stress suite (correctness + load) with short durations
+        # so the gate stays fast; run `go run . -test=all` manually for the
+        # long-form soak numbers.
+        if ( cd "$d" && go run . -test=all -duration=1s -count=60000 ) >/dev/null 2>&1; then
+            record "example:stress_test(12 tests)" 0
+        else
+            record "example:stress_test(12 tests)" 1
+        fi
     else
         if ( cd "$d" && go run . ) >/dev/null 2>&1; then
             record "example:$name" 0

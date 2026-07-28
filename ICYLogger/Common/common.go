@@ -618,8 +618,13 @@ func (pf *CYPublicFunction) GetAppName() string {
 	return base
 }
 
+// cachedPid holds the process ID, captured once at startup. The PID never
+// changes for the lifetime of the process, and os.Getpid() is a real syscall
+// on darwin/linux — calling it per log line showed up in CPU profiles.
+var cachedPid = os.Getpid()
+
 func (pf *CYPublicFunction) GetCurrentProcessId() int {
-	return os.Getpid()
+	return cachedPid
 }
 
 func (pf *CYPublicFunction) GetCurrentThreadId() uint64 {
@@ -814,26 +819,27 @@ func formatHexDump(data []byte) string {
 }
 
 // GetGID returns the current goroutine ID.
+//
+// The stack header produced by runtime.Stack always starts with
+// "goroutine <id> [".  The previous implementation split the header with
+// strings.Fields and then looked for "[" INSIDE the "goroutine" word, which
+// never matches — so it silently returned 0 for every goroutine (the T: field
+// in every log line was always 0). This version parses the digits directly
+// from the raw buffer: correct, and with no intermediate allocations.
 func GetGID() uint64 {
+	var b [64]byte
+	n := runtime.Stack(b[:], false)
+	// Skip "goroutine " (10 bytes), then read digits until non-digit.
+	const prefix = "goroutine "
+	if n <= len(prefix) {
+		return 0
+	}
 	var id uint64
-	b := make([]byte, 32)
-	runtime.Stack(b, false)
-	fields := strings.Fields(string(b))
-	for _, field := range fields {
-		if strings.HasPrefix(field, "goroutine") {
-			parts := strings.Split(field, "[")
-			if len(parts) >= 2 {
-				numStr := strings.Split(parts[1], "]")[0]
-				for _, c := range numStr {
-					if c >= '0' && c <= '9' {
-						id = id*10 + uint64(c-'0')
-					} else {
-						break
-					}
-				}
-				break
-			}
+	for _, c := range b[len(prefix):n] {
+		if c < '0' || c > '9' {
+			break
 		}
+		id = id*10 + uint64(c-'0')
 	}
 	return id
 }
