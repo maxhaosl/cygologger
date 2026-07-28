@@ -33,6 +33,7 @@
 package Appender
 
 import (
+	"bufio"
 	"encoding/binary"
 	"fmt"
 	"net"
@@ -477,7 +478,16 @@ type CYLoggerFileAppender struct {
 	*CYLoggerBaseAppender
 	mu             sync.Mutex
 	file           *os.File
+	// bufw buffers writes to file (guarded by a.mu). Every line no longer costs
+	// a write(2) syscall; the buffer is flushed by the periodic flusher (1s),
+	// on rotation, on Flush() and on UnInit, bounding data loss on hard crash
+	// to at most one flush interval.
+	bufw           *bufio.Writer
 	szCurrentFile  string
+	// nCurrentSize tracks the current file size in memory (guarded by a.mu) so
+	// the per-write size-rotation check avoids an os.Stat syscall per line.
+	// It includes bytes still sitting in bufw.
+	nCurrentSize   int64
 	restriction    *Common.CYFileRestriction
 	timeRotator    *time.Ticker
 	stopCh         chan struct{}
@@ -501,16 +511,38 @@ func (a *CYLoggerFileAppender) Init() bool {
 	}
 	a.timeRotator = time.NewTicker(time.Minute)
 	go func() {
+		// Periodic buffer flush keeps buffered lines visible on disk within
+		// ~1s even under low traffic, without paying a syscall per line.
+		flushTicker := time.NewTicker(time.Second)
+		defer flushTicker.Stop()
 		for {
 			select {
 			case <-a.timeRotator.C:
 				a.checkTimeRotation()
+			case <-flushTicker.C:
+				a.flushBuffer()
 			case <-a.stopCh:
 				return
 			}
 		}
 	}()
 	return true
+}
+
+// flushBuffer flushes the write buffer to the OS (no fsync).
+func (a *CYLoggerFileAppender) flushBuffer() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.bufw != nil {
+		a.bufw.Flush()
+	}
+}
+
+// Flush drains the async queue (base) and then flushes the write buffer so
+// that all previously written lines are visible in the file on return.
+func (a *CYLoggerFileAppender) Flush() {
+	a.CYLoggerBaseAppender.Flush()
+	a.flushBuffer()
 }
 
 func (a *CYLoggerFileAppender) UnInit() {
@@ -526,6 +558,15 @@ func (a *CYLoggerFileAppender) UnInit() {
 	a.CYLoggerBaseAppender.UnInit()
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.closeFileLocked()
+}
+
+// closeFileLocked flushes the buffer and closes the file. Caller holds a.mu.
+func (a *CYLoggerFileAppender) closeFileLocked() {
+	if a.bufw != nil {
+		a.bufw.Flush()
+		a.bufw = nil
+	}
 	if a.file != nil {
 		a.file.Close()
 		a.file = nil
@@ -573,6 +614,13 @@ func (a *CYLoggerFileAppender) openFile() error {
 		return err
 	}
 	a.file = f
+	a.bufw = bufio.NewWriterSize(f, 64*1024)
+	// Seed the in-memory size counter once per open; subsequent writes update
+	// it incrementally so doWrite never needs an os.Stat per line.
+	a.nCurrentSize = 0
+	if info, err := f.Stat(); err == nil {
+		a.nCurrentSize = info.Size()
+	}
 	return nil
 }
 
@@ -582,22 +630,16 @@ func (a *CYLoggerFileAppender) checkTimeRotation() {
 	if a.file == nil {
 		return
 	}
-	info, err := a.file.Stat()
-	if err != nil || info == nil {
-		return
-	}
 	// Honour the master detection switch (LOG_LIMIT_ENABLE): when disabled, the
-	// periodic (per-file-size) rotation must not fire either.
-	if a.restriction.IsEnableCheck() && info.Size() >= int64(a.restriction.GetCheckFileSize()) {
+	// periodic (per-file-size) rotation must not fire either. nCurrentSize
+	// includes buffered bytes, so no Stat syscall is needed.
+	if a.restriction.IsEnableCheck() && a.restriction.IsCreateNewLog(a.nCurrentSize) {
 		a.rotateFileLocked()
 	}
 }
 
 func (a *CYLoggerFileAppender) rotateFileLocked() {
-	if a.file != nil {
-		a.file.Close()
-		a.file = nil
-	}
+	a.closeFileLocked()
 	// Rotate the current file to a timestamped archive name so that multiple
 	// generations accumulate. The cleanup policy (see Schedule) then enforces
 	// per-type file count and total size limits across those generations.
@@ -646,14 +688,18 @@ func (a *CYLoggerFileAppender) doWrite(msg string) {
 	if a.file == nil {
 		return
 	}
-	if a.restriction.IsEnableCheck() && a.restriction.CheckFileSize(a.szCurrentFile) {
+	// Use the in-memory size counter instead of os.Stat per line (syscall
+	// under a hot mutex was the top per-write bottleneck when LOG_LIMIT_ENABLE
+	// is on).
+	if a.restriction.IsEnableCheck() && a.restriction.IsCreateNewLog(a.nCurrentSize) {
 		a.rotateFileLocked()
 	}
-	if a.file == nil {
+	if a.bufw == nil {
 		return
 	}
-	n, err := a.file.WriteString(msg)
+	n, err := a.bufw.WriteString(msg)
 	if err == nil {
+		a.nCurrentSize += int64(n)
 		a.statsLine.Add(1)
 		a.statsByte.Add(int64(n))
 	}
@@ -679,10 +725,9 @@ func (a *CYLoggerFileAppender) GetSize() int64 {
 	if a.file == nil {
 		return 0
 	}
-	if info, err := a.file.Stat(); err == nil {
-		return info.Size()
-	}
-	return 0
+	// nCurrentSize includes bytes still in the write buffer, so it reflects
+	// the logical file size without a Stat syscall.
+	return a.nCurrentSize
 }
 
 // ForceNewFile closes the current file and rotates to a fresh timestamped file
@@ -699,10 +744,7 @@ func (a *CYLoggerFileAppender) ForceNewFile() {
 func (a *CYLoggerFileAppender) Copy(target string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.file != nil {
-		a.file.Close()
-		a.file = nil
-	}
+	a.closeFileLocked()
 	if a.szCurrentFile != "" {
 		pc := Common.GetCYPublicFunctionInstance()
 		if err := pc.CopyFile(a.szCurrentFile, target); err != nil {
@@ -718,9 +760,16 @@ func (a *CYLoggerFileAppender) Copy(target string) {
 func (a *CYLoggerFileAppender) ClearContents() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.bufw != nil {
+		// Discard buffered content along with the file contents.
+		a.bufw = nil
+	}
 	if a.file != nil {
 		a.file.Close()
 		a.file = nil
+	}
+	if a.szCurrentFile != "" {
+		os.Remove(a.szCurrentFile)
 	}
 	a.openFile()
 }
@@ -758,20 +807,22 @@ func (a *CYLoggerMainAppender) Write(pMsg *Common.CYBaseMessage) bool {
 func (a *CYLoggerMainAppender) doWrite(msg string) {
 	// Mirrors CYLoggerFileAppender.doWrite: the file handle and current-file
 	// name are shared across concurrent Write callers and the time-rotation
-	// ticker, so the whole sequence must be guarded by a.mu.
+	// ticker, so the whole sequence must be guarded by a.mu. Size-rotation uses
+	// the in-memory counter to avoid an os.Stat syscall per line.
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.file == nil {
 		return
 	}
-	if a.restriction.IsEnableCheck() && a.restriction.CheckFileSize(a.szCurrentFile) {
+	if a.restriction.IsEnableCheck() && a.restriction.IsCreateNewLog(a.nCurrentSize) {
 		a.rotateFileLocked()
 	}
-	if a.file == nil {
+	if a.bufw == nil {
 		return
 	}
-	n, err := a.file.WriteString(msg)
+	n, err := a.bufw.WriteString(msg)
 	if err == nil {
+		a.nCurrentSize += int64(n)
 		a.statsLine.Add(1)
 		a.statsByte.Add(int64(n))
 	}

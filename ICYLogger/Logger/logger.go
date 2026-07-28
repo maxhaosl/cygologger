@@ -96,13 +96,20 @@ func (c *CYLoggerControl) Init(szLogPath string, bShowConsole, bWriteRemote, bWr
 	cfg := Core.GetCYLoggerConfigInstance()
 	c.layout = Layout.GetCYLoggerTemplateLayoutManagerInstance().GetLayout(cfg.GetLayoutType())
 
-	if bShowConsole || c.consoleApp == nil {
+	if bShowConsole {
 		if c.consoleApp != nil {
 			c.consoleApp.UnInit()
 		}
 		c.consoleApp = Appender.GetCYLoggerAppenderFactoryInstance().CreateConsoleAppender(Core.LogTypeConsole, "", "", szLogPath, eFileMode)
 		c.consoleApp.SetLayout(c.layout)
 		c.consoleApp.SetFilter(c.filter)
+	} else if c.consoleApp != nil {
+		// LOG_SHOW_CONSOLE_WINDOW=false must actually drop the console
+		// appender. The previous condition (bShowConsole || c.consoleApp == nil)
+		// created an enabled console appender on the very first Init even when
+		// the caller passed WithConsole(false), flooding stdout under load.
+		c.consoleApp.UnInit()
+		c.consoleApp = nil
 	}
 	c.mu.Unlock()
 
@@ -145,8 +152,14 @@ func (c *CYLoggerControl) Init(szLogPath string, bShowConsole, bWriteRemote, bWr
 	if c.schedule == nil {
 		c.schedule = Schedule.GetCYLoggerScheduleInstance()
 		c.schedule.Init(szLogPath, cfg.GetTimeExpiredFile())
-		c.schedule.SetClearPeriodSec(cfg.GetClearPeriodSec())
 	}
+	// The schedule singleton (and its clear task) survives UnInit, so the
+	// per-Init settings must be re-asserted on every Init — otherwise a
+	// re-Init in the same process keeps cleaning the PREVIOUS log directory
+	// with the PREVIOUS period and the new directory is never cleaned.
+	c.schedule.SetLogDir(szLogPath)
+	c.schedule.SetExpiredHours(cfg.GetTimeExpiredFile())
+	c.schedule.SetClearPeriodSec(cfg.GetClearPeriodSec())
 	// Propagate the master detection switch (LOG_LIMIT_ENABLE) to the cleanup
 	// task: when disabled, no expired/count/size cleanup runs at all.
 	c.schedule.SetEnable(cfg.IsLimitEnable())

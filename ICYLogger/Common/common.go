@@ -168,9 +168,10 @@ func (e *CYTimeElapsed) ElapsedHours() float64 {
 // CYTimeStamps - timestamp formatting
 // ============================================================================
 
-type CYTimeStamps struct {
-	mu sync.Mutex
-}
+// CYTimeStamps formats timestamps. fmt.Sprintf is a pure function with no
+// shared state, so no locking is required; the previous global sync.Mutex
+// serialised every log line's timestamp formatting across all goroutines.
+type CYTimeStamps struct{}
 
 var g_CYTimeStampsInstance *CYTimeStamps
 var g_CYTimeStampsOnce sync.Once
@@ -183,20 +184,14 @@ func GetCYTimeStampsInstance() *CYTimeStamps {
 }
 
 func (ts *CYTimeStamps) GetTimeStamps(nYY, nMM, nDD, nHR, nMN, nSC, nMMN int) string {
-	ts.mu.Lock()
-	defer ts.mu.Unlock()
 	return fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d.%03d", nYY, nMM, nDD, nHR, nMN, nSC, nMMN)
 }
 
 func (ts *CYTimeStamps) GetTimeStampsFile(nYY, nMM, nDD, nHR, nMN, nSC, nMMN int) string {
-	ts.mu.Lock()
-	defer ts.mu.Unlock()
 	return fmt.Sprintf("%04d%02d%02d%02d%02d%02d%03d", nYY, nMM, nDD, nHR, nMN, nSC, nMMN)
 }
 
 func (ts *CYTimeStamps) GetTimeStampsShort(nYY, nMM, nDD, nHR, nMN, nSC, nMMN int) string {
-	ts.mu.Lock()
-	defer ts.mu.Unlock()
 	return fmt.Sprintf("%02d:%02d:%02d.%03d", nHR, nMN, nSC, nMMN)
 }
 

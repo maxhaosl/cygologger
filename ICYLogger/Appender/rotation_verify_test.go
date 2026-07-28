@@ -112,10 +112,11 @@ func TestCheckTimeRotationHonorsEnableCheck(t *testing.T) {
 	fr.SetRestriction(false, true, 60, 24, 300, 60, 1, 20, 500*1024*1024, 1024*1024*1024)
 	a := newTestFileAppender(t, dir, fr)
 
-	// Grow the file past the threshold directly (bypassing the doWrite guard).
-	if _, err := a.file.WriteString(strings.Repeat("y", 5000)); err != nil {
-		t.Fatal(err)
-	}
+	// Grow the file past the threshold via doWrite: with the master switch OFF
+	// doWrite never rotates, and it keeps the in-memory size counter (used by
+	// checkTimeRotation since the buffered-write optimisation) in sync.
+	a.doWrite(strings.Repeat("y", 5000))
+	a.Flush()
 	// With the master switch OFF the file count must stay at 1 (no rotation).
 	if logs := countDirLogs(t, dir); logs != 1 {
 		t.Fatalf("with IsEnableCheck()==false, expected 1 file, got %d", logs)

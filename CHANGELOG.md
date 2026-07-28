@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-07-28
+
+### Fixed
+
+- **`Logger/logger.go` (console appender)**: `Init()` previously created a console appender on the *first* `Init` regardless of `WithConsole(false)` (the condition was `bShowConsole || c.consoleApp == nil`), so `WithConsole(false)` / `LOG_SHOW_CONSOLE_WINDOW=false` was silently ignored and every log line flooded `stdout` — this also broke the stress test (hundreds of thousands of lines flooded the terminal and looked like a hang). Console appender is now created **only** when `bShowConsole` is true and destroyed when false
+- **`Logger/logger.go` (cleanup scheduler)**: `SetLogDir`/`SetExpiredHours`/`SetClearPeriodSec` were guarded by `if c.schedule == nil`, so after a `Close()` + re-`Init()` in the same process the scheduler kept cleaning the **previous** log directory with the **previous** period and never cleaned the new one. Now re-asserted on every `Init`
+- **`Common/common.go` (`CYTimeStamps`)**: removed a global `sync.Mutex` that wrapped the pure `fmt.Sprintf` timestamp formatter, which serialised every log line's timestamp formatting across all goroutines
+
+### Changed / Performance
+
+- **`Appender/appender.go` (File & Main appenders)**: eliminated a per-line `os.Stat` syscall used for size-rotation checks — a new in-memory `nCurrentSize` byte counter (seeded on open, incremented per write, including buffered bytes) now drives rotation and `GetSize()`
+- **`Appender/appender.go`**: replaced the per-line `write(2)` syscall with a **64 KB `bufio` write buffer** plus a 1-second periodic flush (inside the existing rotation goroutine). Rotation, `UnInit`, `Copy`, and `Flush` all flush the buffer first (`closeFileLocked`/`Flush` unified), bounding data loss on a hard crash to at most one flush interval (~1 s)
+- **`Appender/appender.go` (`ClearContents`)**: now truly truncates the file (was opened `O_APPEND` and therefore never actually cleared)
+- **Throughput**: single-goroutine file write improved ~3.4× (≈28,961 → ≈98,713 lines/sec); verified race-clean, with 200 K-line integrity, size rotation, count-limit cleanup, and extreme concurrent (up to 2048 goroutine) stress tests all passing zero-loss
+
+### Known Limitations
+
+- A single log file requires a single ordered writer, so under heavy concurrency the aggregate rate approximates the single-writer rate (~100 K lines/sec, including the Main double-write). To scale further, disable the Main double-write or shard logs across channels/files
+
 ## [0.3.0] - 2026-07-28
 
 ### Added

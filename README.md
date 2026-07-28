@@ -7,6 +7,8 @@ A high-performance, async, multi-level logging library for Go, inspired by the [
 - **Multiple log types**: TRACE, DEBUG, INFO, WARN, ERROR, FATAL, MAIN, REMOTE, SYS
 - **Multiple outputs**: Console (ANSI color), File (with rotation), Remote TCP, Unix syslog
 - **Async logging**: Non-blocking writes via buffered channels, with automatic flush on exit
+- **Buffered file writes**: 64 KB `bufio` write buffer + 1 s periodic flush per file appender — no per-line `write(2)`/`os.Stat` syscall; crash loss window bounded to ~1 s
+- **In-memory size rotation**: File size-rotation uses an in-memory byte counter (no `os.Stat` per log line), so rotation stays cheap under heavy load
 - **Log level filtering**: Bitmask-based level control at runtime
 - **Pattern layout**: Three built-in formats, plus full custom layout support
 - **Escape filtering**: Automatic escaping of special characters in log messages
@@ -338,6 +340,28 @@ gologger.GetInstance().AddAppender(
 gologger.GetInstance().AddAppender(
     gologger.LogTypeInfo, "app", "Info.log", gologger.LogFileModeAppend)
 ```
+
+## Performance & Durability
+
+File appenders (`CYLoggerFileAppender` / `CYLoggerMainAppender`) are **synchronous**
+writes bypassing the async channel for reliability, and were tuned for high throughput:
+
+- **64 KB `bufio` write buffer + 1 s periodic flush** — lines are batched into a
+  buffered write instead of one `write(2)` syscall per line. The buffer is flushed
+  periodically (1 s), on rotation, on `Flush()`, and on `UnInit`, so a hard crash
+  can lose at most ~1 s of buffered lines. `Flush()` / `Close()` make all previously
+  written lines visible on disk before returning.
+- **In-memory size counter** — size-based rotation uses a byte counter kept in memory
+  (seeded on open, incremented per write *including* buffered bytes) instead of an
+  `os.Stat` per line, keeping the per-write hot path syscall-free.
+- **Throughput**: single-goroutine file writes run at ~100 K lines/sec; the library
+  stays race-clean under `go test -race` and passes 200 K-line integrity,
+  size-rotation, count-limit cleanup, and extreme concurrent (≤2048 goroutine) stress
+  tests with zero loss.
+
+> **Design note**: a single log file requires a single ordered writer, so under heavy
+> concurrency the aggregate rate approximates the single-writer rate. To scale further,
+> disable the Main double-write (`WithMain(false)`) or shard logs across channels/files.
 
 ## Statistics
 
