@@ -136,11 +136,16 @@ func (c *CYLoggerControl) Init(szLogPath string, bShowConsole, bWriteRemote, bWr
 		c.schedule.Init(szLogPath, cfg.GetTimeExpiredFile())
 		c.schedule.SetClearPeriodSec(cfg.GetClearPeriodSec())
 	}
+	// Propagate the master detection switch (LOG_LIMIT_ENABLE) to the cleanup
+	// task: when disabled, no expired/count/size cleanup runs at all.
+	c.schedule.SetEnable(cfg.IsLimitEnable())
 	c.schedule.SetRestriction(
 		c.restriction.GetFileCountPerType(),
 		c.restriction.GetCheckFileTypeSize(),
 		c.restriction.GetCheckAllFileSize(),
 	)
+	c.schedule.SetCheckFileSizeTime(c.restriction.GetCheckFileSizeTime())
+	c.schedule.SetCheckFileCountTime(c.restriction.GetCheckFileCountTime())
 	c.schedule.SetClearUnLogFile(c.restriction.IsClearUnLogFile())
 	c.schedule.StartSchedule()
 
@@ -225,6 +230,16 @@ func (c *CYLoggerControl) AddAppender(eLogType Core.ELogType, szChannel, szFile 
 	}
 
 	appender_.Start(appender_.Run)
+
+	// Share the control's restriction object with the file/main appenders so that
+	// runtime policy changes (master switch, per-file size threshold, …) take
+	// effect on their rotation logic immediately. Without this, WithRestriction's
+	// nCheckFileSize / LOG_LIMIT_ENABLE never reach the live appenders.
+	if fa, ok := appender_.(*Appender.CYLoggerFileAppender); ok {
+		fa.SetRestriction(c.restriction)
+	} else if ma, ok := appender_.(*Appender.CYLoggerMainAppender); ok {
+		ma.SetRestriction(c.restriction)
+	}
 
 	return true
 }
@@ -524,6 +539,116 @@ func (l *CYLoggerImpl) WriteHexLog(nLogLevel int, eMsgType Core.ELogType, nSever
 	Common.ReleaseBaseMessage(msg)
 }
 
+// ============================================================================
+// Channel-aware logging methods — mirror the C++ ICYLogger::WriteLog(szChannel)
+// overloads. The channel is stored on the message and rendered by the layout's
+// [channel] / Channel: field, overriding the appender channel for that message.
+// ============================================================================
+
+// WriteLogCh writes a raw log message with an explicit channel.
+func (l *CYLoggerImpl) WriteLogCh(nLogLevel int, eMsgType Core.ELogType, nSeverCode int, szChannel, szMsg string) {
+	if !l.bInit.Load() || l.bExit.Load() {
+		return
+	}
+	if l.control == nil {
+		return
+	}
+	msg := Common.AcquireBaseMessage()
+	msg.EMsgType = int(eMsgType)
+	msg.NSeverCode = nSeverCode
+	msg.StrChannel = szChannel
+	msg.StrMsg = szMsg
+	msg.Time = time.Now()
+	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
+	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	l.control.Write(msg)
+	Common.ReleaseBaseMessage(msg)
+}
+
+// WriteLogFmtCh writes a formatted log message with an explicit channel and caller info.
+func (l *CYLoggerImpl) WriteLogFmtCh(nLogLevel int, eMsgType Core.ELogType, nSeverCode int,
+	szChannel, pszFile, pszFuncName string, nLine int, szMsg string, args ...any) {
+
+	if !l.bInit.Load() || l.bExit.Load() {
+		return
+	}
+	if l.control == nil {
+		return
+	}
+	formatted := szMsg
+	if len(args) > 0 {
+		formatted = fmt.Sprintf(szMsg, args...)
+	}
+	msg := Common.AcquireBaseMessage()
+	msg.EMsgType = int(eMsgType)
+	msg.NSeverCode = nSeverCode
+	msg.StrChannel = szChannel
+	msg.StrMsg = formatted
+	msg.StrFile = pszFile
+	msg.StrFunc = pszFuncName
+	msg.NLine = nLine
+	msg.Time = time.Now()
+	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
+	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	l.control.Write(msg)
+	Common.ReleaseBaseMessage(msg)
+}
+
+// WriteEscapeLogFmtCh writes an escape-formatted log message with an explicit channel.
+func (l *CYLoggerImpl) WriteEscapeLogFmtCh(nLogLevel int, eMsgType Core.ELogType, nSeverCode int,
+	szChannel, pszFile, pszFuncName string, nLine int, szMsg string, args ...any) {
+
+	if !l.bInit.Load() || l.bExit.Load() {
+		return
+	}
+	if l.control == nil {
+		return
+	}
+	formatted := szMsg
+	if len(args) > 0 {
+		formatted = fmt.Sprintf(szMsg, args...)
+	}
+	msg := Common.AcquireEscapeMessage()
+	msg.EMsgType = int(eMsgType)
+	msg.NSeverCode = nSeverCode
+	msg.StrChannel = szChannel
+	msg.StrMsg = formatted
+	msg.StrFile = pszFile
+	msg.StrFunc = pszFuncName
+	msg.NLine = nLine
+	msg.Time = time.Now()
+	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
+	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	l.control.Write(&msg.CYBaseMessage)
+	Common.ReleaseEscapeMessage(msg)
+}
+
+// WriteHexLogCh writes a hex dump with an explicit channel.
+func (l *CYLoggerImpl) WriteHexLogCh(nLogLevel int, eMsgType Core.ELogType, nSeverCode int,
+	szChannel, pszFile, pszFuncName string, nLine int, data []byte) {
+
+	if !l.bInit.Load() || l.bExit.Load() {
+		return
+	}
+	if l.control == nil {
+		return
+	}
+	hex := formatHex(data)
+	msg := Common.AcquireBaseMessage()
+	msg.EMsgType = int(eMsgType)
+	msg.NSeverCode = nSeverCode
+	msg.StrChannel = szChannel
+	msg.StrMsg = hex
+	msg.StrFile = pszFile
+	msg.StrFunc = pszFuncName
+	msg.NLine = nLine
+	msg.Time = time.Now()
+	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
+	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	l.control.Write(msg)
+	Common.ReleaseBaseMessage(msg)
+}
+
 func formatHex(data []byte) string {
 	const lineWidth = 16
 	result := ""
@@ -741,6 +866,116 @@ func (l *CYLoggerImpl) WriteHexLogDirect(eMsgType Core.ELogType, nSeverCode int,
 	Common.ReleaseBaseMessage(msg)
 }
 
+// ============================================================================
+// Channel-aware direct logging (bypass level filter) — mirror the C++ channel
+// WriteLog overloads but routed through WriteDirect, so the channel is carried
+// on the message and rendered by the layout.
+// ============================================================================
+
+// WriteLogDirectCh writes a raw log message with an explicit channel, bypassing level filtering.
+func (l *CYLoggerImpl) WriteLogDirectCh(eMsgType Core.ELogType, nSeverCode int, szChannel, szMsg string) {
+	if !l.bInit.Load() || l.bExit.Load() {
+		return
+	}
+	if l.control == nil {
+		return
+	}
+	msg := Common.AcquireBaseMessage()
+	msg.EMsgType = int(eMsgType)
+	msg.NSeverCode = nSeverCode
+	msg.StrChannel = szChannel
+	msg.StrMsg = szMsg
+	msg.Time = time.Now()
+	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
+	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	l.control.WriteDirect(eMsgType, msg)
+	Common.ReleaseBaseMessage(msg)
+}
+
+// WriteLogFmtDirectCh writes a formatted log message with an explicit channel, bypassing level filtering.
+func (l *CYLoggerImpl) WriteLogFmtDirectCh(eMsgType Core.ELogType, nSeverCode int,
+	szChannel, pszFile, pszFuncName string, nLine int, szMsg string, args ...any) {
+
+	if !l.bInit.Load() || l.bExit.Load() {
+		return
+	}
+	if l.control == nil {
+		return
+	}
+	formatted := szMsg
+	if len(args) > 0 {
+		formatted = fmt.Sprintf(szMsg, args...)
+	}
+	msg := Common.AcquireBaseMessage()
+	msg.EMsgType = int(eMsgType)
+	msg.NSeverCode = nSeverCode
+	msg.StrChannel = szChannel
+	msg.StrMsg = formatted
+	msg.StrFile = pszFile
+	msg.StrFunc = pszFuncName
+	msg.NLine = nLine
+	msg.Time = time.Now()
+	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
+	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	l.control.WriteDirect(eMsgType, msg)
+	Common.ReleaseBaseMessage(msg)
+}
+
+// WriteEscapeLogFmtDirectCh writes an escape-formatted log message with an explicit channel, bypassing filtering.
+func (l *CYLoggerImpl) WriteEscapeLogFmtDirectCh(eMsgType Core.ELogType, nSeverCode int,
+	szChannel, pszFile, pszFuncName string, nLine int, szMsg string, args ...any) {
+
+	if !l.bInit.Load() || l.bExit.Load() {
+		return
+	}
+	if l.control == nil {
+		return
+	}
+	formatted := szMsg
+	if len(args) > 0 {
+		formatted = fmt.Sprintf(szMsg, args...)
+	}
+	msg := Common.AcquireEscapeMessage()
+	msg.EMsgType = int(eMsgType)
+	msg.NSeverCode = nSeverCode
+	msg.StrChannel = szChannel
+	msg.StrMsg = formatted
+	msg.StrFile = pszFile
+	msg.StrFunc = pszFuncName
+	msg.NLine = nLine
+	msg.Time = time.Now()
+	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
+	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	l.control.WriteDirect(eMsgType, &msg.CYBaseMessage)
+	Common.ReleaseEscapeMessage(msg)
+}
+
+// WriteHexLogDirectCh writes a hex dump with an explicit channel, bypassing level filtering.
+func (l *CYLoggerImpl) WriteHexLogDirectCh(eMsgType Core.ELogType, nSeverCode int,
+	szChannel, pszFile, pszFuncName string, nLine int, data []byte) {
+
+	if !l.bInit.Load() || l.bExit.Load() {
+		return
+	}
+	if l.control == nil {
+		return
+	}
+	hex := formatHex(data)
+	msg := Common.AcquireBaseMessage()
+	msg.EMsgType = int(eMsgType)
+	msg.NSeverCode = nSeverCode
+	msg.StrChannel = szChannel
+	msg.StrMsg = hex
+	msg.StrFile = pszFile
+	msg.StrFunc = pszFuncName
+	msg.NLine = nLine
+	msg.Time = time.Now()
+	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
+	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	l.control.WriteDirect(eMsgType, msg)
+	Common.ReleaseBaseMessage(msg)
+}
+
 // ---- Internal helpers ----
 
 // callerInfo captures the caller's file, function name, and line number.
@@ -892,4 +1127,106 @@ func LOG_DIRECT_FATAL(szMsg string, args ...any) {
 func LOG_DIRECT_MAIN(szMsg string, args ...any) {
 	file, funcName, line := callerInfo(2)
 	GetLoggerInstance().WriteLogFmtDirect(Core.LogTypeMain, -1, file, funcName, line, szMsg, args...)
+}
+
+// ---- Channel-aware logging convenience functions (auto caller info) ----
+// These mirror the C++ macros (e.g. CY_LOG_TRACE) but add an explicit channel
+// argument, so the per-message channel is rendered by the layout.
+
+// LOG_TRACE_CH writes a trace-level log to the given channel with automatic caller info.
+func LOG_TRACE_CH(szChannel, szMsg string, args ...any) {
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmtCh(int(Core.LogLevelTrace), Core.LogTypeTrace, -1, szChannel, file, funcName, line, szMsg, args...)
+}
+
+// LOG_DEBUG_CH writes a debug-level log to the given channel with automatic caller info.
+func LOG_DEBUG_CH(szChannel, szMsg string, args ...any) {
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmtCh(int(Core.LogLevelDebug), Core.LogTypeDebug, -1, szChannel, file, funcName, line, szMsg, args...)
+}
+
+// LOG_INFO_CH writes an info-level log to the given channel with automatic caller info.
+func LOG_INFO_CH(szChannel, szMsg string, args ...any) {
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmtCh(int(Core.LogLevelInfo), Core.LogTypeInfo, -1, szChannel, file, funcName, line, szMsg, args...)
+}
+
+// LOG_WARN_CH writes a warn-level log to the given channel with automatic caller info.
+func LOG_WARN_CH(szChannel, szMsg string, args ...any) {
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmtCh(int(Core.LogLevelWarn), Core.LogTypeWarn, -1, szChannel, file, funcName, line, szMsg, args...)
+}
+
+// LOG_ERROR_CH writes an error-level log to the given channel with automatic caller info.
+func LOG_ERROR_CH(szChannel, szMsg string, args ...any) {
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmtCh(int(Core.LogLevelError), Core.LogTypeError, -1, szChannel, file, funcName, line, szMsg, args...)
+}
+
+// LOG_FATAL_CH writes a fatal-level log to the given channel with automatic caller info.
+func LOG_FATAL_CH(szChannel, szMsg string, args ...any) {
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmtCh(int(Core.LogLevelFatal), Core.LogTypeFatal, -1, szChannel, file, funcName, line, szMsg, args...)
+}
+
+// LOG_MAIN_CH writes a main-type log to the given channel with automatic caller info.
+func LOG_MAIN_CH(szChannel, szMsg string, args ...any) {
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmtCh(int(Core.LogLevelInfo), Core.LogTypeMain, -1, szChannel, file, funcName, line, szMsg, args...)
+}
+
+// LOG_SYS_CH writes a system-type log to the given channel with automatic caller info.
+func LOG_SYS_CH(szChannel, szMsg string, args ...any) {
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmtCh(int(Core.LogLevelSys), Core.LogTypeSys, -1, szChannel, file, funcName, line, szMsg, args...)
+}
+
+// LOG_REMOTE_CH writes a remote-type log to the given channel with automatic caller info.
+func LOG_REMOTE_CH(szChannel, szMsg string, args ...any) {
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmtCh(int(Core.LogLevelRemote), Core.LogTypeRemote, -1, szChannel, file, funcName, line, szMsg, args...)
+}
+
+// ---- Channel-aware direct logging convenience functions (bypass level filter) ----
+
+// LOG_DIRECT_TRACE_CH writes a trace log to the given channel directly, bypassing level filtering.
+func LOG_DIRECT_TRACE_CH(szChannel, szMsg string, args ...any) {
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmtDirectCh(Core.LogTypeTrace, -1, szChannel, file, funcName, line, szMsg, args...)
+}
+
+// LOG_DIRECT_DEBUG_CH writes a debug log to the given channel directly, bypassing level filtering.
+func LOG_DIRECT_DEBUG_CH(szChannel, szMsg string, args ...any) {
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmtDirectCh(Core.LogTypeDebug, -1, szChannel, file, funcName, line, szMsg, args...)
+}
+
+// LOG_DIRECT_INFO_CH writes an info log to the given channel directly, bypassing level filtering.
+func LOG_DIRECT_INFO_CH(szChannel, szMsg string, args ...any) {
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmtDirectCh(Core.LogTypeInfo, -1, szChannel, file, funcName, line, szMsg, args...)
+}
+
+// LOG_DIRECT_WARN_CH writes a warn log to the given channel directly, bypassing level filtering.
+func LOG_DIRECT_WARN_CH(szChannel, szMsg string, args ...any) {
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmtDirectCh(Core.LogTypeWarn, -1, szChannel, file, funcName, line, szMsg, args...)
+}
+
+// LOG_DIRECT_ERROR_CH writes an error log to the given channel directly, bypassing level filtering.
+func LOG_DIRECT_ERROR_CH(szChannel, szMsg string, args ...any) {
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmtDirectCh(Core.LogTypeError, -1, szChannel, file, funcName, line, szMsg, args...)
+}
+
+// LOG_DIRECT_FATAL_CH writes a fatal log to the given channel directly, bypassing level filtering.
+func LOG_DIRECT_FATAL_CH(szChannel, szMsg string, args ...any) {
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmtDirectCh(Core.LogTypeFatal, -1, szChannel, file, funcName, line, szMsg, args...)
+}
+
+// LOG_DIRECT_MAIN_CH writes a main log to the given channel directly, bypassing level filtering.
+func LOG_DIRECT_MAIN_CH(szChannel, szMsg string, args ...any) {
+	file, funcName, line := callerInfo(2)
+	GetLoggerInstance().WriteLogFmtDirectCh(Core.LogTypeMain, -1, szChannel, file, funcName, line, szMsg, args...)
 }

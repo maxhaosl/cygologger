@@ -107,6 +107,7 @@ const (
 	LogLayoutTypeBuildin1 = Core.LogLayoutTypeBuildin1
 	LogLayoutTypeBuildin2 = Core.LogLayoutTypeBuildin2
 	LogLayoutTypeBuildin3 = Core.LogLayoutTypeBuildin3
+	LogLayoutTypeBuildin4 = Core.LogLayoutTypeBuildin4
 
 	LogFilterAll             = Core.LogFilterAll
 	LogFilterWarnsAndErrors = Core.LogFilterWarnsAndErrors
@@ -185,15 +186,32 @@ func LOG_MAIN(szMsg string, args ...any)   { Logger.LOG_MAIN(szMsg, args...) }
 func LOG_SYS(szMsg string, args ...any)    { Logger.LOG_SYS(szMsg, args...) }
 func LOG_REMOTE(szMsg string, args ...any) { Logger.LOG_REMOTE(szMsg, args...) }
 
-// ---- Direct logging convenience functions (bypass level filter) ----
+// ---- Channel-aware logging convenience functions ----
 
-func LOG_DIRECT_TRACE(szMsg string, args ...any)  { Logger.LOG_DIRECT_TRACE(szMsg, args...) }
-func LOG_DIRECT_DEBUG(szMsg string, args ...any)  { Logger.LOG_DIRECT_DEBUG(szMsg, args...) }
-func LOG_DIRECT_INFO(szMsg string, args ...any)   { Logger.LOG_DIRECT_INFO(szMsg, args...) }
-func LOG_DIRECT_WARN(szMsg string, args ...any)   { Logger.LOG_DIRECT_WARN(szMsg, args...) }
-func LOG_DIRECT_ERROR(szMsg string, args ...any)  { Logger.LOG_DIRECT_ERROR(szMsg, args...) }
-func LOG_DIRECT_FATAL(szMsg string, args ...any)  { Logger.LOG_DIRECT_FATAL(szMsg, args...) }
-func LOG_DIRECT_MAIN(szMsg string, args ...any)   { Logger.LOG_DIRECT_MAIN(szMsg, args...) }
+func LOG_TRACE_CH(szChannel, szMsg string, args ...any)   { Logger.LOG_TRACE_CH(szChannel, szMsg, args...) }
+func LOG_DEBUG_CH(szChannel, szMsg string, args ...any)   { Logger.LOG_DEBUG_CH(szChannel, szMsg, args...) }
+func LOG_INFO_CH(szChannel, szMsg string, args ...any)    { Logger.LOG_INFO_CH(szChannel, szMsg, args...) }
+func LOG_WARN_CH(szChannel, szMsg string, args ...any)    { Logger.LOG_WARN_CH(szChannel, szMsg, args...) }
+func LOG_ERROR_CH(szChannel, szMsg string, args ...any)   { Logger.LOG_ERROR_CH(szChannel, szMsg, args...) }
+func LOG_FATAL_CH(szChannel, szMsg string, args ...any)   { Logger.LOG_FATAL_CH(szChannel, szMsg, args...) }
+func LOG_MAIN_CH(szChannel, szMsg string, args ...any)    { Logger.LOG_MAIN_CH(szChannel, szMsg, args...) }
+func LOG_SYS_CH(szChannel, szMsg string, args ...any)     { Logger.LOG_SYS_CH(szChannel, szMsg, args...) }
+func LOG_REMOTE_CH(szChannel, szMsg string, args ...any)  { Logger.LOG_REMOTE_CH(szChannel, szMsg, args...) }
+
+// ---- Channel-aware direct logging convenience functions (bypass level filter) ----
+
+func LOG_DIRECT_TRACE_CH(szChannel, szMsg string, args ...any) { Logger.LOG_DIRECT_TRACE_CH(szChannel, szMsg, args...) }
+func LOG_DIRECT_DEBUG_CH(szChannel, szMsg string, args ...any) { Logger.LOG_DIRECT_DEBUG_CH(szChannel, szMsg, args...) }
+func LOG_DIRECT_INFO_CH(szChannel, szMsg string, args ...any)  { Logger.LOG_DIRECT_INFO_CH(szChannel, szMsg, args...) }
+func LOG_DIRECT_WARN_CH(szChannel, szMsg string, args ...any)  { Logger.LOG_DIRECT_WARN_CH(szChannel, szMsg, args...) }
+func LOG_DIRECT_ERROR_CH(szChannel, szMsg string, args ...any) { Logger.LOG_DIRECT_ERROR_CH(szChannel, szMsg, args...) }
+func LOG_DIRECT_FATAL_CH(szChannel, szMsg string, args ...any) { Logger.LOG_DIRECT_FATAL_CH(szChannel, szMsg, args...) }
+func LOG_DIRECT_MAIN_CH(szChannel, szMsg string, args ...any)  { Logger.LOG_DIRECT_MAIN_CH(szChannel, szMsg, args...) }
+
+// The idiomatic channel-aware helpers (TraceCh/DebugCh/.../SysCh, their Direct*
+// and Hex*/Escape* variants) are defined in api.go and exported directly from
+// the ICYLogger package, so they are not re-declared here.
+
 
 // =============================================================================
 // Entity / file management helpers (github.com/maxhaosl/CYGoLogger/ICYLogger/Entity)

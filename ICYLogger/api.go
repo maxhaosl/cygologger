@@ -149,6 +149,72 @@ func Console(format string, args ...any) {
 }
 
 // =============================================================================
+// Channel-aware convenience logging functions
+//
+// These mirror the basic Trace/Debug/Info/... helpers but carry an explicit
+// channel string that is rendered by the layout (the [channel] / Channel:
+// field), mirroring the C++ WriteLog(szChannel, ...) overloads.
+//
+// Usage:
+//   gologger.InfoCh("ModuleA", "value = %d", val)
+//   gologger.ErrorCh("ModuleB", "unexpected error: %v", err)
+// =============================================================================
+
+// TraceCh writes a trace-level log to the given channel.
+func TraceCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteLogFmtCh(int(Core.LogLevelTrace), Core.LogTypeTrace, -1, channel, file, funcName, line, format, args...)
+}
+
+// DebugCh writes a debug-level log to the given channel.
+func DebugCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteLogFmtCh(int(Core.LogLevelDebug), Core.LogTypeDebug, -1, channel, file, funcName, line, format, args...)
+}
+
+// InfoCh writes an info-level log to the given channel.
+func InfoCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteLogFmtCh(int(Core.LogLevelInfo), Core.LogTypeInfo, -1, channel, file, funcName, line, format, args...)
+}
+
+// WarnCh writes a warn-level log to the given channel.
+func WarnCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteLogFmtCh(int(Core.LogLevelWarn), Core.LogTypeWarn, -1, channel, file, funcName, line, format, args...)
+}
+
+// ErrorCh writes an error-level log to the given channel.
+func ErrorCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteLogFmtCh(int(Core.LogLevelError), Core.LogTypeError, -1, channel, file, funcName, line, format, args...)
+}
+
+// FatalCh writes a fatal-level log to the given channel.
+func FatalCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteLogFmtCh(int(Core.LogLevelFatal), Core.LogTypeFatal, -1, channel, file, funcName, line, format, args...)
+}
+
+// MainCh writes a main-type log to the given channel.
+func MainCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteLogFmtCh(int(Core.LogLevelInfo), Core.LogTypeMain, -1, channel, file, funcName, line, format, args...)
+}
+
+// RemoteCh writes a remote log to the given channel.
+func RemoteCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteLogFmtCh(int(Core.LogLevelRemote), Core.LogTypeRemote, -1, channel, file, funcName, line, format, args...)
+}
+
+// SysCh writes a system log to the given channel.
+func SysCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteLogFmtCh(int(Core.LogLevelSys), Core.LogTypeSys, -1, channel, file, funcName, line, format, args...)
+}
+
+// =============================================================================
 // Scope — enter/exit scope logging with defer
 //
 // Usage:
@@ -365,6 +431,64 @@ func DirectSys(format string, args ...any) {
 }
 
 // =============================================================================
+// Direct channel-aware logging — bypass level filter, with auto caller info
+// =============================================================================
+
+// DirectTraceCh writes a trace log to the channel directly, bypassing level filtering.
+func DirectTraceCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteLogFmtDirectCh(Core.LogTypeTrace, -1, channel, file, funcName, line, format, args...)
+}
+
+// DirectDebugCh writes a debug log to the channel directly, bypassing level filtering.
+func DirectDebugCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteLogFmtDirectCh(Core.LogTypeDebug, -1, channel, file, funcName, line, format, args...)
+}
+
+// DirectInfoCh writes an info log to the channel directly, bypassing level filtering.
+func DirectInfoCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteLogFmtDirectCh(Core.LogTypeInfo, -1, channel, file, funcName, line, format, args...)
+}
+
+// DirectWarnCh writes a warn log to the channel directly, bypassing level filtering.
+func DirectWarnCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteLogFmtDirectCh(Core.LogTypeWarn, -1, channel, file, funcName, line, format, args...)
+}
+
+// DirectErrorCh writes an error log to the channel directly, bypassing level filtering.
+func DirectErrorCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteLogFmtDirectCh(Core.LogTypeError, -1, channel, file, funcName, line, format, args...)
+}
+
+// DirectFatalCh writes a fatal log to the channel directly, bypassing level filtering.
+func DirectFatalCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteLogFmtDirectCh(Core.LogTypeFatal, -1, channel, file, funcName, line, format, args...)
+}
+
+// DirectMainCh writes a main log to the channel directly, bypassing level filtering.
+func DirectMainCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteLogFmtDirectCh(Core.LogTypeMain, -1, channel, file, funcName, line, format, args...)
+}
+
+// DirectRemoteCh writes a remote log to the channel directly, bypassing level filtering.
+func DirectRemoteCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteLogFmtDirectCh(Core.LogTypeRemote, -1, channel, file, funcName, line, format, args...)
+}
+
+// DirectSysCh writes a system log to the channel directly, bypassing level filtering.
+func DirectSysCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteLogFmtDirectCh(Core.LogTypeSys, -1, channel, file, funcName, line, format, args...)
+}
+
+// =============================================================================
 // Log file utilities
 // =============================================================================
 
@@ -535,6 +659,64 @@ func HexSys(data []byte) {
 }
 
 // =============================================================================
+// Hex channel-aware logging
+// =============================================================================
+
+// HexTraceCh writes a hex dump of data to the channel at trace level.
+func HexTraceCh(channel string, data []byte) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteHexLogCh(int(Core.LogLevelTrace), Core.LogTypeTrace, -1, channel, file, funcName, line, data)
+}
+
+// HexDebugCh writes a hex dump of data to the channel at debug level.
+func HexDebugCh(channel string, data []byte) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteHexLogCh(int(Core.LogLevelDebug), Core.LogTypeDebug, -1, channel, file, funcName, line, data)
+}
+
+// HexInfoCh writes a hex dump of data to the channel at info level.
+func HexInfoCh(channel string, data []byte) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteHexLogCh(int(Core.LogLevelInfo), Core.LogTypeInfo, -1, channel, file, funcName, line, data)
+}
+
+// HexWarnCh writes a hex dump of data to the channel at warn level.
+func HexWarnCh(channel string, data []byte) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteHexLogCh(int(Core.LogLevelWarn), Core.LogTypeWarn, -1, channel, file, funcName, line, data)
+}
+
+// HexErrorCh writes a hex dump of data to the channel at error level.
+func HexErrorCh(channel string, data []byte) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteHexLogCh(int(Core.LogLevelError), Core.LogTypeError, -1, channel, file, funcName, line, data)
+}
+
+// HexFatalCh writes a hex dump of data to the channel at fatal level.
+func HexFatalCh(channel string, data []byte) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteHexLogCh(int(Core.LogLevelFatal), Core.LogTypeFatal, -1, channel, file, funcName, line, data)
+}
+
+// HexMainCh writes a hex dump of data to the channel on the main log.
+func HexMainCh(channel string, data []byte) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteHexLogCh(int(Core.LogLevelInfo), Core.LogTypeMain, -1, channel, file, funcName, line, data)
+}
+
+// HexRemoteCh writes a hex dump of data to the channel on the remote log.
+func HexRemoteCh(channel string, data []byte) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteHexLogCh(int(Core.LogLevelRemote), Core.LogTypeRemote, -1, channel, file, funcName, line, data)
+}
+
+// HexSysCh writes a hex dump of data to the channel on the system log.
+func HexSysCh(channel string, data []byte) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteHexLogCh(int(Core.LogLevelSys), Core.LogTypeSys, -1, channel, file, funcName, line, data)
+}
+
+// =============================================================================
 // Escape logging — special-character-escaped messages
 //
 // Usage:
@@ -593,6 +775,64 @@ func EscapeRemote(format string, args ...any) {
 func EscapeSys(format string, args ...any) {
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteEscapeLogFmt(int(Core.LogLevelSys), Core.LogTypeSys, -1, file, funcName, line, format, args...)
+}
+
+// =============================================================================
+// Escape channel-aware logging
+// =============================================================================
+
+// EscapeTraceCh writes an escape-formatted trace log to the channel.
+func EscapeTraceCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteEscapeLogFmtCh(int(Core.LogLevelTrace), Core.LogTypeTrace, -1, channel, file, funcName, line, format, args...)
+}
+
+// EscapeDebugCh writes an escape-formatted debug log to the channel.
+func EscapeDebugCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteEscapeLogFmtCh(int(Core.LogLevelDebug), Core.LogTypeDebug, -1, channel, file, funcName, line, format, args...)
+}
+
+// EscapeInfoCh writes an escape-formatted info log to the channel.
+func EscapeInfoCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteEscapeLogFmtCh(int(Core.LogLevelInfo), Core.LogTypeInfo, -1, channel, file, funcName, line, format, args...)
+}
+
+// EscapeWarnCh writes an escape-formatted warn log to the channel.
+func EscapeWarnCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteEscapeLogFmtCh(int(Core.LogLevelWarn), Core.LogTypeWarn, -1, channel, file, funcName, line, format, args...)
+}
+
+// EscapeErrorCh writes an escape-formatted error log to the channel.
+func EscapeErrorCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteEscapeLogFmtCh(int(Core.LogLevelError), Core.LogTypeError, -1, channel, file, funcName, line, format, args...)
+}
+
+// EscapeFatalCh writes an escape-formatted fatal log to the channel.
+func EscapeFatalCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteEscapeLogFmtCh(int(Core.LogLevelFatal), Core.LogTypeFatal, -1, channel, file, funcName, line, format, args...)
+}
+
+// EscapeMainCh writes an escape-formatted log message to the channel on the main log.
+func EscapeMainCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteEscapeLogFmtCh(int(Core.LogLevelInfo), Core.LogTypeMain, -1, channel, file, funcName, line, format, args...)
+}
+
+// EscapeRemoteCh writes an escape-formatted log message to the channel on the remote log.
+func EscapeRemoteCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteEscapeLogFmtCh(int(Core.LogLevelRemote), Core.LogTypeRemote, -1, channel, file, funcName, line, format, args...)
+}
+
+// EscapeSysCh writes an escape-formatted log message to the channel on the system log.
+func EscapeSysCh(channel, format string, args ...any) {
+	file, funcName, line := apiCallerInfo(1)
+	Logger.GetInstance().WriteEscapeLogFmtCh(int(Core.LogLevelSys), Core.LogTypeSys, -1, channel, file, funcName, line, format, args...)
 }
 
 // =============================================================================

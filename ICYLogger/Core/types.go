@@ -91,6 +91,7 @@ const (
 	LogLayoutTypeBuildin1 ELogLayoutType = 1
 	LogLayoutTypeBuildin2 ELogLayoutType = 2
 	LogLayoutTypeBuildin3 ELogLayoutType = 3
+	LogLayoutTypeBuildin4 ELogLayoutType = 4 // [Time][TYPE|P:pid|T:tid][func(line)] Msg
 )
 
 // STStatistics holds logging statistics counters (fully aligned with C++ CYLogger).

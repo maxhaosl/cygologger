@@ -31,3 +31,21 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+.idea/
+
+# Compiled example binaries (build artifacts, not source)
+examples/console_test/console_test
+examples/gaps_coverage/gaps_coverage
+examples/new_features/new_features
+examples/quickstart/quickstart
+examples/simple_example/simple_example
+examples/simple_logger_test/simple_logger_test
+examples/simple_test/simple_test
+examples/feature_verify/feature_verify
+
+# Example runtime log output
+examples/**/logs/
+examples/**/Log/
+
+# Internal agent workspace (working memory, not project source)
+.codebuddy/

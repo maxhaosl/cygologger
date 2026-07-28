@@ -334,9 +334,17 @@ func (a *CYLoggerBaseAppender) formatMessage(msg *Common.CYBaseMessage) string {
 	if a.layout == nil {
 		return msg.StrMsg + "\n"
 	}
+	// Honour a per-message channel (set via the channel-aware WriteLog*Ch
+	// methods, mirroring C++ WriteLog's szChannel). When a message carries no
+	// channel of its own, fall back to the appender's channel so existing
+	// behaviour (where the appender channel is rendered) is preserved.
+	ch := msg.StrChannel
+	if ch == "" {
+		ch = a.szChannel
+	}
 	t := msg.Time
 	return a.layout.GetFormatMessage(
-		a.szChannel,
+		ch,
 		Core.ELogType(msg.EMsgType),
 		msg.NSeverCode,
 		msg.StrMsg,
@@ -530,7 +538,9 @@ func (a *CYLoggerFileAppender) checkTimeRotation() {
 	if err != nil || info == nil {
 		return
 	}
-	if info.Size() >= int64(a.restriction.GetCheckFileSize()) {
+	// Honour the master detection switch (LOG_LIMIT_ENABLE): when disabled, the
+	// periodic (per-file-size) rotation must not fire either.
+	if a.restriction.IsEnableCheck() && info.Size() >= int64(a.restriction.GetCheckFileSize()) {
 		a.rotateFileLocked()
 	}
 }

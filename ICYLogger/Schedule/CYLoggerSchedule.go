@@ -74,6 +74,12 @@ type CYLoggerClearLogFile struct {
 	// lastSizeCheck tracks the last time the size policies were evaluated,
 	// mirroring C++ m_objElapsedCheckSizeTime (gated by nCheckFileSizeTime).
 	lastSizeCheck time.Time
+	// nCheckFileSizeTime / nCheckFileCountTime gate the size- and count-policy
+	// passes, mirroring C++ LOG_CHECK_FILE_SIZE_TIME / LOG_CHECK_FILE_COUNT_TIME.
+	nCheckFileSizeTime int
+	nCheckFileCountTime int
+	// lastCountCheck tracks the last time the per-type count policy ran.
+	lastCountCheck time.Time
 }
 
 func NewCYLoggerClearLogFile(szLogDir string, nExpiredHours int) *CYLoggerClearLogFile {
@@ -87,6 +93,9 @@ func NewCYLoggerClearLogFile(szLogDir string, nExpiredHours int) *CYLoggerClearL
 		nCheckAllFileSize:    Core.DefaultLogCheckAllFileSize,
 		bEnableClearUnLogFile: true,
 		bFirstProcess:        true,
+		nCheckFileSizeTime:   Core.DefaultLogCheckFileSizeTime,
+		nCheckFileCountTime:  Core.DefaultLogCheckFileCountTime,
+		lastCountCheck:       time.Now(),
 	}
 	t.CYNamedThread = *Common.NewCYNamedThread("CYLoggerClearLogFile")
 	return t
@@ -109,6 +118,22 @@ func (c *CYLoggerClearLogFile) SetClearUnLogFile(b bool) { c.bEnableClearUnLogFi
 func (c *CYLoggerClearLogFile) SetClearPeriodSec(n int) {
 	if n > 0 {
 		c.nClearPeriodSec = n
+	}
+}
+
+// SetCheckFileSizeTime sets the interval (seconds) between size-policy passes,
+// mirroring C++ LOG_CHECK_FILE_SIZE_TIME.
+func (c *CYLoggerClearLogFile) SetCheckFileSizeTime(n int) {
+	if n > 0 {
+		c.nCheckFileSizeTime = n
+	}
+}
+
+// SetCheckFileCountTime sets the interval (seconds) between count-policy passes,
+// mirroring C++ LOG_CHECK_FILE_COUNT_TIME.
+func (c *CYLoggerClearLogFile) SetCheckFileCountTime(n int) {
+	if n > 0 {
+		c.nCheckFileCountTime = n
 	}
 }
 
@@ -184,8 +209,10 @@ func (c *CYLoggerClearLogFile) DoClear() {
 				g.sizes[i] = 0
 			}
 		}
-		// 2) Per-type file count limit.
-		if len(g.paths) > c.nFileCountPerType {
+		// 2) Per-type file count limit, gated by nCheckFileCountTime
+		// (LOG_CHECK_FILE_COUNT_TIME). It always runs on the first pass.
+		runCount := c.bFirstProcess || time.Since(c.lastCountCheck) > time.Duration(c.nCheckFileCountTime)*time.Second
+		if runCount && len(g.paths) > c.nFileCountPerType {
 			sortByModTime(g.paths)
 			toDelete := len(g.paths) - c.nFileCountPerType
 			for i := 0; i < toDelete; i++ {
@@ -194,12 +221,13 @@ func (c *CYLoggerClearLogFile) DoClear() {
 					g.total -= info.Size()
 				}
 			}
+			c.lastCountCheck = time.Now()
 		}
 	}
 
 	// 3) & 4) Size policies run on the first pass or when the size-check interval
 	// (nCheckFileSizeTime) has elapsed, mirroring C++ ProcessClearLog's gate.
-	runSize := c.bFirstProcess || time.Since(c.lastSizeCheck) > time.Duration(Core.DefaultLogCheckFileSizeTime)*time.Second
+	runSize := c.bFirstProcess || time.Since(c.lastSizeCheck) > time.Duration(c.nCheckFileSizeTime)*time.Second
 	if runSize {
 		for _, g := range groups {
 			// Per-type total size limit.
@@ -420,6 +448,24 @@ func (s *CYLoggerSchedule) SetClearUnLogFile(b bool) {
 	defer s.mu.Unlock()
 	if s.clearTask != nil {
 		s.clearTask.SetClearUnLogFile(b)
+	}
+}
+
+// SetCheckFileSizeTime forwards the size-policy interval to the clear-log task.
+func (s *CYLoggerSchedule) SetCheckFileSizeTime(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.clearTask != nil {
+		s.clearTask.SetCheckFileSizeTime(n)
+	}
+}
+
+// SetCheckFileCountTime forwards the count-policy interval to the clear-log task.
+func (s *CYLoggerSchedule) SetCheckFileCountTime(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.clearTask != nil {
+		s.clearTask.SetCheckFileCountTime(n)
 	}
 }
 

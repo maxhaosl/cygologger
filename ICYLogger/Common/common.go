@@ -347,6 +347,7 @@ func (c *CYNamedCondition) WaitForEvent(timeout time.Duration) ERetCode {
 type CYBaseMessage struct {
 	EMsgType   int
 	NSeverCode int
+	StrChannel string // per-message channel, mirrors C++ WriteLog szChannel; rendered by layouts
 	StrMsg     string
 	StrFile    string
 	StrFunc    string
@@ -360,6 +361,7 @@ type CYBaseMessage struct {
 func (m *CYBaseMessage) Reset() {
 	m.EMsgType = 0
 	m.NSeverCode = 0
+	m.StrChannel = ""
 	m.StrMsg = ""
 	m.StrFile = ""
 	m.StrFunc = ""

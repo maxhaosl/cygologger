@@ -305,6 +305,12 @@ func (c *CYLoggerConfig) SetRestriction(bEnable, bClear bool,
 	c.nCountPerType = nCount
 	c.nCheckFileTypeSize = nTypeSize
 	c.nCheckAllFileSize = nAllSize
+	// LOG_TIME_CLEAR_LOG (nTimeClear) is the periodic cleanup cycle in C++. It
+	// drives the background schedule's check period, so mirror it into the
+	// existing nClearPeriodSec field (guarded so a 0 value keeps the current one).
+	if nTimeClear > 0 {
+		c.nClearPeriodSec = nTimeClear
+	}
 }
 
 // IsLimitEnable returns whether file-size checking is enabled.

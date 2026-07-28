@@ -109,6 +109,38 @@ gologger.LOG_SYS("Sys message")
 gologger.LOG_REMOTE("Remote message")
 ```
 
+## Channel-Aware Logging
+
+Every logging function also has a channel-aware variant that carries an explicit
+`channel` string (the first argument), mirroring the C++ `ICYLogger::WriteLog(szChannel, ...)`
+overloads. The channel is rendered by the layout (e.g. `[Channel:Name]` / the
+`[channel]` bracket) and overrides the appender channel for that single message.
+
+```go
+// Idiomatic API (auto caller file/line/func capture)
+gologger.InfoCh("ModuleA", "value = %d", val)
+gologger.ErrorCh("ModuleB", "unexpected error: %v", err)
+gologger.DebugCh("Net", "recv %d bytes", n)
+gologger.HexInfoCh("Proto", payload)         // hex dump on a channel
+gologger.EscapeInfoCh("Raw", "a ]bracketed, value")  // escaped on a channel
+
+// Direct (bypass level filter) and legacy LOG_* forms also have _CH variants
+gologger.DirectWarnCh("HotPath", "always shown: %s", msg)
+gologger.LOG_TRACE_CH("Boot", "boot step %d", i)
+gologger.LOG_DIRECT_INFO_CH("Boot", "forced info")
+```
+
+| Variant family | Channel-aware functions |
+| --- | --- |
+| Idiomatic | `TraceCh` `DebugCh` `InfoCh` `WarnCh` `ErrorCh` `FatalCh` `MainCh` `RemoteCh` `SysCh` |
+| Direct (no filter) | `DirectTraceCh` … `DirectSysCh` |
+| Hex | `HexTraceCh` … `HexSysCh` |
+| Escape | `EscapeTraceCh` … `EscapeSysCh` |
+| Legacy `LOG_*` | `LOG_TRACE_CH` … `LOG_REMOTE_CH`, `LOG_DIRECT_TRACE_CH` … `LOG_DIRECT_MAIN_CH` |
+
+If a message has no channel of its own, the appender's channel (set via
+`AddAppender`/`InitDefault`) is rendered instead, preserving the previous behaviour.
+
 ## One-Line Initialization & Top-Level API
 
 For the most common cases you only need **one import and one line**:
@@ -281,6 +313,7 @@ gologger.GetInstance().WriteLog(
 | `LogLayoutTypeBuildin1` | `[HH:MM:SS.mmm][TYPE][PID][TID] Msg` |
 | `LogLayoutTypeBuildin2` | `[YYYY-MM-DD HH:MM:SS.mmm][TYPE][PID][TID][file:line][func] Msg` |
 | `LogLayoutTypeBuildin3` | `[HH:MM:SS][TYPE][channel] Msg` |
+| `LogLayoutTypeBuildin4` | `[YYYY-MM-DD HH:MM:SS.mmm][TYPE&#124;P:pid&#124;T:tid][func(line)] Msg` |
 | `LogLayoutTypeCustom` | User-provided layout |
 
 Switch layout at runtime:
