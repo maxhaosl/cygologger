@@ -350,6 +350,19 @@ type CYBaseMessage struct {
 	Time       time.Time
 	NProcessId uint64
 	NThreadId  uint64
+
+	// CachedLine caches the fully rendered line for this message so that when
+	// the same message is written to multiple file appenders with identical
+	// formatting inputs (the Main double-write: per-type file + Main.log), the
+	// layout render runs ONCE instead of once per appender. The cache is only
+	// valid when the layout instance, the effective channel and the escape flag
+	// all match (see CYLoggerBaseAppender.formatMessage). All reads/writes
+	// happen on the producer goroutine that owns the message (clones own their
+	// copied cache exclusively), so no synchronization is needed.
+	CachedLine   string
+	CachedLayout any // the layout instance the cache was rendered with
+	CachedCh     string
+	CachedEscape bool
 }
 
 // Reset clears all fields to their zero values for pool reuse.
@@ -363,6 +376,10 @@ func (m *CYBaseMessage) Reset() {
 	m.NLine = 0
 	m.NProcessId = 0
 	m.NThreadId = 0
+	m.CachedLine = ""
+	m.CachedLayout = nil
+	m.CachedCh = ""
+	m.CachedEscape = false
 }
 
 var baseMessagePool = sync.Pool{

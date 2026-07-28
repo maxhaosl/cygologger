@@ -35,6 +35,7 @@ package logger
 import (
 	"fmt"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -798,34 +799,49 @@ func (l *CYLoggerImpl) WriteHexLogCh(nLogLevel int, eMsgType Core.ELogType, nSev
 }
 
 func formatHex(data []byte) string {
+	// Build into a single pre-sized strings.Builder. The previous string
+	// concatenation (result += ...) reallocated and copied the whole result on
+	// every append — O(n^2) allocations for large dumps, a real cost when hex
+	// logging big payloads.
 	const lineWidth = 16
-	result := ""
+	const hexDigits = "0123456789abcdef"
+	lines := (len(data) + lineWidth - 1) / lineWidth
+	var sb strings.Builder
+	sb.Grow(lines * (6 + lineWidth*3 + 2 + lineWidth + 2))
 	for i := 0; i < len(data); i += lineWidth {
 		end := i + lineWidth
 		if end > len(data) {
 			end = len(data)
 		}
-		result += fmt.Sprintf("%04x: ", i)
+		// "%04x: " offset prefix (grows beyond 4 digits for large offsets,
+		// exactly like fmt's %04x).
+		off := strconv.FormatUint(uint64(i), 16)
+		for k := len(off); k < 4; k++ {
+			sb.WriteByte('0')
+		}
+		sb.WriteString(off)
+		sb.WriteString(": ")
 		for j := i; j < end; j++ {
-			result += fmt.Sprintf("%02x ", data[j])
+			b := data[j]
+			sb.WriteByte(hexDigits[b>>4])
+			sb.WriteByte(hexDigits[b&0xf])
+			sb.WriteByte(' ')
 		}
-		if end-i < lineWidth {
-			for j := end - i; j < lineWidth; j++ {
-				result += "   "
-			}
+		for j := end - i; j < lineWidth; j++ {
+			sb.WriteString("   ")
 		}
-		result += " |"
+		sb.WriteString(" |")
 		for j := i; j < end; j++ {
 			c := data[j]
 			if c >= 32 && c < 127 {
-				result += string(c)
+				sb.WriteByte(c)
 			} else {
-				result += "."
+				sb.WriteByte('.')
 			}
 		}
-		result += "|\n"
+		sb.WriteString("|\n")
 	}
-	return result
+	return sb.String()
 }
 
 func (l *CYLoggerImpl) SetConfig(szLogPath string, bShowConsoleWindow bool) {

@@ -712,6 +712,8 @@ func concurrencyScaling() {
 		opts  []gologger.Option
 	}{
 		{"default (WithThreadId=true, Main aggregated)", nil},
+		{"fast+Main (WithThreadId=false, MountMain=true, render-dedup)", []gologger.Option{
+			gologger.WithThreadId(false), gologger.WithMountMain(true)}},
 		{"fast (WithThreadId=false, MountMain=false)", []gologger.Option{
 			gologger.WithThreadId(false), gologger.WithMountMain(false)}},
 	} {

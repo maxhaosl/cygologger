@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.10] - 2026-07-28
+
+### Performance
+
+- **Main double-write render dedup.** With `WithMountMain(true)` (the default) every message reaches two file appenders — its per-type file and `Main.log` — and each ran the full layout render independently, doubling the formatting CPU per line. The rendered line is now cached on the message (`CYBaseMessage.CachedLine` + layout/channel/escape identity keys, reset on pool release); the second appender reuses the cached string when the layout instance, effective channel and escape flag all match, so the render runs exactly once per line. The cache is race-free by ownership: it is only touched on the producer goroutine that owns the message (clones copy the cache and are exclusively owned by their consumer). A `reflect.TypeOf(...).Comparable()` probe at `SetLayout` time guards the identity check against exotic non-comparable custom layout types. Measured (`examples/robustness_verify` scaling table, zero loss): fast mode with Main aggregation ON now reaches **~1.17M lines/sec at 16 workers — within ~2% of MountMain(false)** (~1.19M), i.e. the Main double-write formatting cost is effectively eliminated; a new `fast+Main` row in the scaling table tracks this configuration permanently.
+- **`formatHex` O(n²) fix.** The hex-dump formatter (`WriteHexLog*`) built its output via string `+=` concatenation — every append reallocated and copied the whole result, i.e. quadratic allocations for large payloads. Rewritten with a single pre-sized `strings.Builder` and manual hex digit emission (offset prefix keeps `%04x` semantics, growing beyond 4 digits for large offsets).
+
+### Verification
+
+- Full gate re-run after the change: `Build/verify.sh` **23 PASS / 0 FAIL**, whole-library `go test -race ./ICYLogger/...` clean, `examples/stress_test` 12/12 PASS (zero loss up to 2048 goroutines), `examples/robustness_verify` 12/12 PASS incl. 10s soak at ~1.07M lines/sec with zero loss.
+
+### Documentation
+
+- README `## Installation` expanded with three `go.mod` integration paths: `go get @latest`/pinned version, manual `require` + `go mod tidy`, and local checkout via `replace` directive (matching `examples/*/go.mod` usage).
+
+## [0.3.9] - 2026-07-28
+
+### Added
+
+- `LogLayoutTypeBuildin5`: retrieval-custom layout rendering a labelled `[CH:channel]` field.
+
+## [0.3.8] - 2026-07-28
+
+### Added
+
+- `WithCallerSkip` option so wrapper libraries render the end-user caller in the `[func(line)]` field.
+
 ## [0.3.7] - 2026-07-28
 
 ### Performance

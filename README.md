@@ -30,9 +30,62 @@ A high-performance, async, multi-level logging library for Go, inspired by the [
 
 ## Installation
 
+### Option 1: `go get` (recommended)
+
+In your own module directory (must already contain a `go.mod`; if not, run `go mod init <your-module>` first):
+
 ```bash
-go get github.com/maxhaosl/CYGoLogger
+go get github.com/maxhaosl/CYGoLogger@latest   # latest tagged release
+# or pin a specific version:
+go get github.com/maxhaosl/CYGoLogger@v0.3.10
 ```
+
+This automatically adds the `require` line to your `go.mod` and updates `go.sum`.
+
+### Option 2: edit `go.mod` manually
+
+Add the dependency to your `go.mod` yourself:
+
+```go
+module your.example/yourapp
+
+go 1.21
+
+require github.com/maxhaosl/CYGoLogger v0.3.10
+```
+
+Then resolve and download it:
+
+```bash
+go mod tidy
+```
+
+### Option 3: local checkout via `replace` (development / private use)
+
+If you work against a local clone of this repository (this is exactly how the
+programs under `examples/` consume the library), point the module at the local
+path with a `replace` directive:
+
+```go
+module your.example/yourapp
+
+go 1.21
+
+require github.com/maxhaosl/CYGoLogger v0.0.0
+
+replace github.com/maxhaosl/CYGoLogger => ../CYGoLogger  // relative or absolute path to the clone
+```
+
+Then run `go mod tidy`. With a `replace` in effect, no network access or
+published tag is needed.
+
+### Import and use
+
+```go
+import gologger "github.com/maxhaosl/CYGoLogger/ICYLogger"
+```
+
+Only the `ICYLogger` package needs to be imported — it re-exports the entire public API.
 
 ## Quick Start
 

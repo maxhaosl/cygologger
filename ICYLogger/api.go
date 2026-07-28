@@ -319,7 +319,7 @@ func WithLogLevel(f Core.ELogLevelFilter) Option {
 
 // WithMountMain enables or disables the Main aggregate file appender (default:
 // true). When false, Init mounts only the per-level files and no Main.log is
-// produced, so callers get a strict per-level file set (e.g. the retrieval
+// produced, so callers get a strict per-level file set (e.g. the
 // project's Debug = Trace/Info/Warn/Error, Release = Error only).
 func WithMountMain(b bool) Option {
 	return func(c *Core.CYLoggerConfig) { c.SetMountMain(b) }
@@ -634,7 +634,8 @@ func SetWriteSys(b bool) {
 // SetLogLevel sets the global log level filter — a one-line shortcut over the
 // per-instance control, mirroring C++ SetLogLevel. It takes effect immediately
 // on every subsequent write (the control re-checks the filter per message).
-//   gologger.SetLogLevel(gologger.LogFilterWarnsAndErrors)
+//
+//	gologger.SetLogLevel(gologger.LogFilterWarnsAndErrors)
 func SetLogLevel(filter Core.ELogLevelFilter) {
 	Logger.GetInstance().SetLogLevel(filter)
 }
@@ -649,7 +650,8 @@ func SetFilter(pFilter *Filter.ICYLoggerPatternFilter) {
 // of the given type, mirroring C++ CYLoggerControl::SetLayout. The resolved
 // layout object is shared with the layout manager, so appenders created
 // afterwards pick it up automatically.
-//   gologger.SetLayout(gologger.LogLayoutTypeBuildin2)
+//
+//	gologger.SetLayout(gologger.LogLayoutTypeBuildin2)
 func SetLayout(eType Core.ELogLayoutType) {
 	layout := Layout.GetCYLoggerTemplateLayoutManagerInstance().GetLayout(eType)
 	Logger.GetInstance().SetLayout(eType, layout)

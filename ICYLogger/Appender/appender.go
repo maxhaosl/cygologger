@@ -39,6 +39,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -117,6 +118,10 @@ type CYLoggerBaseAppender struct {
 	fpsCounter   *Common.CYFPSCounter
 	layout       Layout.ICYLoggerTemplateLayout
 	filter       *Filter.ICYLoggerPatternFilter
+	// bLayoutComparable records (at SetLayout time) whether the layout's
+	// dynamic type supports ==, so the render-cache identity check in
+	// formatMessage can never panic on an exotic custom layout type.
+	bLayoutComparable bool
 }
 
 func newBaseAppender(eLogType Core.ELogType, szChannel, szFile, szLogPath string, eFileMode Core.ELogFileMode) *CYLoggerBaseAppender {
@@ -147,7 +152,13 @@ func (a *CYLoggerBaseAppender) SetLogPath(szLogPath string)               { a.sz
 func (a *CYLoggerBaseAppender) IsEnable() bool                        { return a.bEnable.Load() }
 func (a *CYLoggerBaseAppender) SetEnable(bEnable bool)                 { a.bEnable.Store(bEnable) }
 func (a *CYLoggerBaseAppender) GetLayout() Layout.ICYLoggerTemplateLayout { return a.layout }
-func (a *CYLoggerBaseAppender) SetLayout(pLayout Layout.ICYLoggerTemplateLayout) { a.layout = pLayout }
+func (a *CYLoggerBaseAppender) SetLayout(pLayout Layout.ICYLoggerTemplateLayout) {
+	a.layout = pLayout
+	// Interface == on a non-comparable dynamic type panics. The built-in
+	// layouts are pointer types (always comparable); probe custom layouts once
+	// here so the per-line cache check in formatMessage never has to.
+	a.bLayoutComparable = pLayout != nil && reflect.TypeOf(pLayout).Comparable()
+}
 func (a *CYLoggerBaseAppender) GetFilter() *Filter.ICYLoggerPatternFilter   { return a.filter }
 func (a *CYLoggerBaseAppender) SetFilter(pFilter *Filter.ICYLoggerPatternFilter) { a.filter = pFilter }
 func (a *CYLoggerBaseAppender) GetFPSCounter() *Common.CYFPSCounter  { return a.fpsCounter }
@@ -397,8 +408,19 @@ func (a *CYLoggerBaseAppender) formatMessage(msg *Common.CYBaseMessage) string {
 	if ch == "" {
 		ch = a.szChannel
 	}
+	bEscape := a.filter != nil
+	// Main double-write dedup: when the same message reaches a second file
+	// appender with the SAME layout, effective channel and escape flag, the
+	// rendered line is byte-identical — reuse the cached render instead of
+	// paying the layout cost twice per line. The cache lives on the message,
+	// which is owned by a single producer goroutine (clones copy the cache and
+	// are exclusively owned by their consumer), so this is race-free.
+	if a.bLayoutComparable && msg.CachedLine != "" && msg.CachedLayout == any(a.layout) &&
+		msg.CachedCh == ch && msg.CachedEscape == bEscape {
+		return msg.CachedLine
+	}
 	t := msg.Time
-	return a.layout.GetFormatMessage(
+	out := a.layout.GetFormatMessage(
 		ch,
 		Core.ELogType(msg.EMsgType),
 		msg.NSeverCode,
@@ -410,8 +432,13 @@ func (a *CYLoggerBaseAppender) formatMessage(msg *Common.CYBaseMessage) string {
 		msg.NThreadId,
 		t.Year(), int(t.Month()), t.Day(),
 		t.Hour(), t.Minute(), t.Second(), t.Nanosecond()/int(time.Millisecond),
-		a.filter != nil,
+		bEscape,
 	)
+	msg.CachedLine = out
+	msg.CachedLayout = a.layout
+	msg.CachedCh = ch
+	msg.CachedEscape = bEscape
+	return out
 }
 
 func (a *CYLoggerBaseAppender) doWrite(msg string) {
