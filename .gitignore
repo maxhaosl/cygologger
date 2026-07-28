@@ -45,6 +45,7 @@ examples/feature_verify/feature_verify
 examples/stress_test/stress_test
 examples/level_filter_test/level_filter_test
 examples/mount_main_test/mount_main_test
+examples/robustness_verify/robustness_verify
 
 # Example runtime log output
 examples/**/logs/

@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.6] - 2026-07-28
+
+### Performance
+
+- **Async batched file writes (File/Main appenders).** `CYLoggerFileAppender.Write` no longer performs the disk write synchronously under the file mutex (the old design serialised *every* logging goroutine on a single mutex+disk convoy — throughput actually *dropped* as concurrency rose). Now the producer formats the line on its own goroutine (layout rendering runs fully in parallel) and appends the immutable string to a double-buffered batch under a sub-microsecond mutex; a single per-file writer goroutine swaps the batch out on a wakeup token and writes it through the 64KB bufio writer under one lock acquisition. Backpressure (bounded batch, producers block when full) guarantees **zero message loss**; per-file ordering is preserved by the single-writer design. `Flush()` performs a blocking handshake with the writer (drain + bufio flush) so "write then read the file" remains reliable; when the writer goroutine is not running (stand-alone appender use), `Flush` drains on the caller's goroutine so it can never deadlock. `CYLoggerMainAppender` inherits the same pipeline.
+- **`WithThreadId(bool)` option (default `true`).** Recording the goroutine ID (the `T:` field) requires `runtime.Stack`, whose internal runtime lock serialises **all** concurrent logging goroutines — CPU profiles showed **>90%** of logging CPU inside `runtime.Stack` at 8+ goroutines, making it the dominant scalability bottleneck (not the file lock). `WithThreadId(false)` skips the call entirely (the `T:` field renders 0), matching industry practice (zap/zerolog do not record goroutine IDs by default). The switch is cached in an atomic (`Logger.gWithThreadId`, refreshed on every `Init`) so the hot path never touches the config lock. New default constant `LOG_WITH_THREAD_ID = true`; `SetWithThreadId`/`IsWithThreadId` on `CYLoggerConfig`.
+- **Measured impact** (Apple Silicon, 48-byte payload + layout, `examples/robustness_verify` scaling table, zero loss in all runs):
+
+  | Workers | before (sync, GID on) | after (async, GID on) | after (async, `WithThreadId(false)`, `MountMain(false)`) |
+  |---|---|---|---|
+  | 1 | 108,910/s | 91,202/s | 375,607/s |
+  | 4 | 81,751/s | 81,406/s | 921,082/s |
+  | 8 | 72,976/s | 71,827/s | 1,188,530/s |
+  | 16 | 70,045/s | 69,166/s | 1,294,117/s |
+  | 32 | 61,861/s | 63,312/s | **1,276,627/s (~20x)** |
+
+  With the async writer in place, `runtime.Stack` was the sole remaining serialisation point; disabling it unlocks near-linear scaling up to the disk/formatting limit (~1.29M lines/sec aggregate).
+
+### Fixed
+
+- **Data race + goroutine leak in the cleanup scheduler (`Schedule/CYLoggerSchedule.go`).** `-race` exposed unsynchronised access to `CYLoggerClearLogFile` fields (`szLogDir`, `bEnable`, limits, `bFirstProcess`, `lastSizeCheck/lastCountCheck`) between setters (called on every re-`Init`) and the background `DoClear` goroutine; worse, `StopSchedule` did not wait for the goroutine to exit, so a stale cleanup task from a previous `Init` (e.g. with a 1s period) could keep enumerating — and **deleting** — log files in a directory the next `Init` had re-pointed elsewhere (observed as "lost" lines/files in back-to-back test runs). Fixes: all config fields now guarded by an `RWMutex` (setters lock; `DoClear` takes a consistent snapshot under `RLock` and serialises concurrent passes via a run mutex); `StartSchedule` spawns a goroutine tracked by a `WaitGroup` with a dedicated stop channel; `StopSchedule` closes the channel and **blocks until the goroutine has fully exited**. A cleanup panic can no longer kill the process (recovered; goroutine respawned on next Init).
+- **`CYLoggerFileAppender.Flush` handshake race.** The old non-blocking `flushCh` send silently skipped the drain whenever the writer goroutine was busy, so a line written immediately before `Flush` could be invisible to a subsequent file read. The handshake is now blocking (with a stop-aware fallback), restoring the "write → Flush → read" contract.
+
+### Added
+
+- **`examples/robustness_verify`**: comprehensive robustness/stress example (`go run .`, non-zero exit on failure) covering 8 dimensions in one process: all-types count integrity + `Main` aggregation (+`bMountMain` off ⇒ no `Main.log`), size rotation (file count + zero line loss across rotated files), count-based cleanup, layout `Buildin1–4` pairwise distinctness, channel field rendering, `Append` vs `Time` file naming, multi-worker concurrency throughput with a 1/4/8/16/32-worker scaling table (lock-contention detector, run for both the default and the `WithThreadId(false)` fast configuration), and edge cases (200KB single line, empty message, re-`Init` after `Close`). Flags: `-count`, `-filesize`, `-maxfiles`, `-workers`, `-duration`, `-v`. Picked up automatically by `Build/verify.sh`.
+
 ## [0.3.5] - 2026-07-28
 
 ### Changed

@@ -51,6 +51,14 @@ type CYLoggerConfig struct {
 	eLayoutType     ELogLayoutType
 	eLogLevelFilter ELogLevelFilter
 	bMountMain      bool // 是否挂载 Main 聚合文件（默认 true，向后兼容旧行为）
+	// bWithThreadId controls whether each log line records the goroutine ID
+	// (the T: field). Obtaining the goroutine ID requires runtime.Stack, whose
+	// internal runtime lock serialises ALL logging goroutines under high
+	// concurrency (CPU profiles showed >90% of logging CPU inside
+	// runtime.Stack). Default true for backward compatibility; latency/
+	// throughput-sensitive services should set WithThreadId(false), matching
+	// industry practice (zap/zerolog do not record goroutine IDs by default).
+	bWithThreadId bool
 
 	// szRemoteAddr is the remote log server address (host:port). It mirrors the
 	// C++ CY_LOG_APPENDER remote endpoint (default 127.0.0.1:7000).
@@ -92,6 +100,7 @@ func GetCYLoggerConfigInstance() *CYLoggerConfig {
 			eLayoutType:     DefaultLogLayoutType,
 			eLogLevelFilter: DefaultLogLevelFilter,
 			bMountMain:      LOG_MOUNT_MAIN,
+			bWithThreadId:   LOG_WITH_THREAD_ID,
 
 			szRemoteAddr:          "127.0.0.1:7000",
 			eRemoteProto:          RemoteProtoTCP,
@@ -253,6 +262,21 @@ func (c *CYLoggerConfig) IsMountMain() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.bMountMain
+}
+
+// SetWithThreadId enables/disables recording the goroutine ID (T: field) on
+// every log line. See the bWithThreadId field comment for the rationale.
+func (c *CYLoggerConfig) SetWithThreadId(b bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.bWithThreadId = b
+}
+
+// IsWithThreadId returns whether log lines record the goroutine ID.
+func (c *CYLoggerConfig) IsWithThreadId() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.bWithThreadId
 }
 
 // =============================================================================

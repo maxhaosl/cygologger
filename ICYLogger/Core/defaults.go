@@ -76,6 +76,10 @@ const (
 	// True keeps the historical all-types behaviour (a Main.log aggregates every
 	// enabled level); set false to keep a strict per-level file set.
 	LOG_MOUNT_MAIN = true
+	// LOG_WITH_THREAD_ID mirrors whether each line records the goroutine ID
+	// (T: field). Fetching it costs a runtime.Stack call whose internal lock
+	// serialises concurrent loggers; disable for maximum throughput.
+	LOG_WITH_THREAD_ID = true
 )
 
 // DefaultConfig returns a freshly allocated *CYLoggerConfig initialised with the
@@ -92,6 +96,7 @@ func DefaultConfig() *CYLoggerConfig {
 		eLayoutType:     LOG_LAYOUT_TYPE,
 		eLogLevelFilter: LOG_LEVEL_FILTER,
 		bMountMain:      LOG_MOUNT_MAIN,
+		bWithThreadId:   LOG_WITH_THREAD_ID,
 
 		szRemoteAddr:   "127.0.0.1:7000",
 		nClearPeriodSec: 60,

@@ -50,6 +50,25 @@ import (
 	"github.com/maxhaosl/CYGoLogger/ICYLogger/Statistics"
 )
 
+// gWithThreadId caches the WithThreadId configuration switch as an atomic so
+// the hot logging path can consult it without taking the config RWMutex. It is
+// refreshed from the config on every Init. When off, currentThreadId skips the
+// runtime.Stack call entirely — CPU profiles showed runtime.Stack's internal
+// runtime lock serialising ALL concurrent logging goroutines (>90% of logging
+// CPU at 8+ goroutines), making it the dominant scalability bottleneck.
+var gWithThreadId atomic.Bool
+
+func init() { gWithThreadId.Store(Core.LOG_WITH_THREAD_ID) }
+
+// currentThreadId returns the goroutine ID for the T: field, or 0 when the
+// WithThreadId switch is off (the expensive runtime.Stack call is skipped).
+func currentThreadId() uint64 {
+	if !gWithThreadId.Load() {
+		return 0
+	}
+	return Common.GetGID()
+}
+
 // CYLoggerControl routes log messages to the correct Entity.
 type CYLoggerControl struct {
 	Common.CYNoCopy
@@ -494,6 +513,9 @@ func (l *CYLoggerImpl) Init() bool {
 	}
 
 	l.config = Core.GetCYLoggerConfigInstance()
+	// Refresh the hot-path thread-id switch from the (possibly re-)applied
+	// configuration options.
+	gWithThreadId.Store(l.config.IsWithThreadId())
 	l.control = GetCYLoggerControlInstance()
 
 	if !l.control.Init(l.config.GetLogPath(), l.config.IsShowConsole(), l.config.IsWriteRemote(), l.config.IsWriteSys(),
@@ -549,7 +571,7 @@ func (l *CYLoggerImpl) WriteLog(nLogLevel int, eMsgType Core.ELogType, nSeverCod
 	msg.StrMsg = szMsg
 	msg.Time = time.Now()
 	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
-	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	msg.NThreadId = currentThreadId()
 	l.control.Write(msg)
 	Common.ReleaseBaseMessage(msg)
 }
@@ -576,7 +598,7 @@ func (l *CYLoggerImpl) WriteLogFmt(nLogLevel int, eMsgType Core.ELogType, nSever
 	msg.NLine = nLine
 	msg.Time = time.Now()
 	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
-	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	msg.NThreadId = currentThreadId()
 	l.control.Write(msg)
 	Common.ReleaseBaseMessage(msg)
 }
@@ -603,7 +625,7 @@ func (l *CYLoggerImpl) WriteEscapeLogFmt(nLogLevel int, eMsgType Core.ELogType, 
 	msg.NLine = nLine
 	msg.Time = time.Now()
 	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
-	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	msg.NThreadId = currentThreadId()
 	l.control.Write(&msg.CYBaseMessage)
 	Common.ReleaseEscapeMessage(msg)
 }
@@ -627,7 +649,7 @@ func (l *CYLoggerImpl) WriteHexLog(nLogLevel int, eMsgType Core.ELogType, nSever
 	msg.NLine = nLine
 	msg.Time = time.Now()
 	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
-	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	msg.NThreadId = currentThreadId()
 	l.control.Write(msg)
 	Common.ReleaseBaseMessage(msg)
 }
@@ -653,7 +675,7 @@ func (l *CYLoggerImpl) WriteLogCh(nLogLevel int, eMsgType Core.ELogType, nSeverC
 	msg.StrMsg = szMsg
 	msg.Time = time.Now()
 	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
-	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	msg.NThreadId = currentThreadId()
 	l.control.Write(msg)
 	Common.ReleaseBaseMessage(msg)
 }
@@ -682,7 +704,7 @@ func (l *CYLoggerImpl) WriteLogFmtCh(nLogLevel int, eMsgType Core.ELogType, nSev
 	msg.NLine = nLine
 	msg.Time = time.Now()
 	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
-	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	msg.NThreadId = currentThreadId()
 	l.control.Write(msg)
 	Common.ReleaseBaseMessage(msg)
 }
@@ -711,7 +733,7 @@ func (l *CYLoggerImpl) WriteEscapeLogFmtCh(nLogLevel int, eMsgType Core.ELogType
 	msg.NLine = nLine
 	msg.Time = time.Now()
 	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
-	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	msg.NThreadId = currentThreadId()
 	l.control.Write(&msg.CYBaseMessage)
 	Common.ReleaseEscapeMessage(msg)
 }
@@ -737,7 +759,7 @@ func (l *CYLoggerImpl) WriteHexLogCh(nLogLevel int, eMsgType Core.ELogType, nSev
 	msg.NLine = nLine
 	msg.Time = time.Now()
 	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
-	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	msg.NThreadId = currentThreadId()
 	l.control.Write(msg)
 	Common.ReleaseBaseMessage(msg)
 }
@@ -873,7 +895,7 @@ func (l *CYLoggerImpl) WriteLogDirect(eMsgType Core.ELogType, nSeverCode int, sz
 	msg.StrMsg = szMsg
 	msg.Time = time.Now()
 	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
-	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	msg.NThreadId = currentThreadId()
 	l.control.WriteDirect(eMsgType, msg)
 	Common.ReleaseBaseMessage(msg)
 }
@@ -901,7 +923,7 @@ func (l *CYLoggerImpl) WriteLogFmtDirect(eMsgType Core.ELogType, nSeverCode int,
 	msg.NLine = nLine
 	msg.Time = time.Now()
 	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
-	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	msg.NThreadId = currentThreadId()
 	l.control.WriteDirect(eMsgType, msg)
 	Common.ReleaseBaseMessage(msg)
 }
@@ -929,7 +951,7 @@ func (l *CYLoggerImpl) WriteEscapeLogFmtDirect(eMsgType Core.ELogType, nSeverCod
 	msg.NLine = nLine
 	msg.Time = time.Now()
 	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
-	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	msg.NThreadId = currentThreadId()
 	l.control.WriteDirect(eMsgType, &msg.CYBaseMessage)
 	Common.ReleaseEscapeMessage(msg)
 }
@@ -954,7 +976,7 @@ func (l *CYLoggerImpl) WriteHexLogDirect(eMsgType Core.ELogType, nSeverCode int,
 	msg.NLine = nLine
 	msg.Time = time.Now()
 	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
-	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	msg.NThreadId = currentThreadId()
 	l.control.WriteDirect(eMsgType, msg)
 	Common.ReleaseBaseMessage(msg)
 }
@@ -980,7 +1002,7 @@ func (l *CYLoggerImpl) WriteLogDirectCh(eMsgType Core.ELogType, nSeverCode int, 
 	msg.StrMsg = szMsg
 	msg.Time = time.Now()
 	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
-	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	msg.NThreadId = currentThreadId()
 	l.control.WriteDirect(eMsgType, msg)
 	Common.ReleaseBaseMessage(msg)
 }
@@ -1009,7 +1031,7 @@ func (l *CYLoggerImpl) WriteLogFmtDirectCh(eMsgType Core.ELogType, nSeverCode in
 	msg.NLine = nLine
 	msg.Time = time.Now()
 	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
-	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	msg.NThreadId = currentThreadId()
 	l.control.WriteDirect(eMsgType, msg)
 	Common.ReleaseBaseMessage(msg)
 }
@@ -1038,7 +1060,7 @@ func (l *CYLoggerImpl) WriteEscapeLogFmtDirectCh(eMsgType Core.ELogType, nSeverC
 	msg.NLine = nLine
 	msg.Time = time.Now()
 	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
-	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	msg.NThreadId = currentThreadId()
 	l.control.WriteDirect(eMsgType, &msg.CYBaseMessage)
 	Common.ReleaseEscapeMessage(msg)
 }
@@ -1064,7 +1086,7 @@ func (l *CYLoggerImpl) WriteHexLogDirectCh(eMsgType Core.ELogType, nSeverCode in
 	msg.NLine = nLine
 	msg.Time = time.Now()
 	msg.NProcessId = uint64(Common.GetCYPublicFunctionInstance().GetCurrentProcessId())
-	msg.NThreadId = Common.GetCYPublicFunctionInstance().GetCurrentThreadId()
+	msg.NThreadId = currentThreadId()
 	l.control.WriteDirect(eMsgType, msg)
 	Common.ReleaseBaseMessage(msg)
 }

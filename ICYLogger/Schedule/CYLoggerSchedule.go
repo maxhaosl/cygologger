@@ -55,10 +55,14 @@ var logTypePrefixes = []string{
 // CYLoggerClearLogFile periodically cleans up old log files.
 type CYLoggerClearLogFile struct {
 	Common.CYNamedThread
+	mu             sync.RWMutex // guards every config field read by DoClear
 	bEnable       bool
 	nExpiredHours int
 	szLogDir      string
 	nClearPeriodSec int // cleanup check period in seconds (configurable)
+	stopWg        sync.WaitGroup // tracks the background clear goroutine
+	chStop        chan struct{}  // signals the background clear goroutine to exit
+	runMu         sync.Mutex     // serializes DoClear invocations
 
 	// Rotation policy limits.
 	nFileCountPerType int // max files kept per log type
@@ -101,21 +105,45 @@ func NewCYLoggerClearLogFile(szLogDir string, nExpiredHours int) *CYLoggerClearL
 	return t
 }
 
-func (c *CYLoggerClearLogFile) IsEnable() bool                   { return c.bEnable }
-func (c *CYLoggerClearLogFile) SetEnable(b bool)                 { c.bEnable = b }
-func (c *CYLoggerClearLogFile) SetExpiredHours(n int)            { c.nExpiredHours = n }
-func (c *CYLoggerClearLogFile) SetLogDir(sz string)              { c.szLogDir = sz }
+func (c *CYLoggerClearLogFile) IsEnable() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.bEnable
+}
+func (c *CYLoggerClearLogFile) SetEnable(b bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.bEnable = b
+}
+func (c *CYLoggerClearLogFile) SetExpiredHours(n int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.nExpiredHours = n
+}
+func (c *CYLoggerClearLogFile) SetLogDir(sz string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.szLogDir = sz
+}
 func (c *CYLoggerClearLogFile) SetRestriction(nFileCountPerType, nCheckFileTypeSize, nCheckAllFileSize int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.nFileCountPerType = nFileCountPerType
 	c.nCheckFileTypeSize = nCheckFileTypeSize
 	c.nCheckAllFileSize = nCheckAllFileSize
 }
 
 // SetClearUnLogFile enables or disables purging of non-log files.
-func (c *CYLoggerClearLogFile) SetClearUnLogFile(b bool) { c.bEnableClearUnLogFile = b }
+func (c *CYLoggerClearLogFile) SetClearUnLogFile(b bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.bEnableClearUnLogFile = b
+}
 
 // SetClearPeriodSec sets the cleanup check period in seconds.
 func (c *CYLoggerClearLogFile) SetClearPeriodSec(n int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if n > 0 {
 		c.nClearPeriodSec = n
 	}
@@ -124,6 +152,8 @@ func (c *CYLoggerClearLogFile) SetClearPeriodSec(n int) {
 // SetCheckFileSizeTime sets the interval (seconds) between size-policy passes,
 // mirroring C++ LOG_CHECK_FILE_SIZE_TIME.
 func (c *CYLoggerClearLogFile) SetCheckFileSizeTime(n int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if n > 0 {
 		c.nCheckFileSizeTime = n
 	}
@@ -132,6 +162,8 @@ func (c *CYLoggerClearLogFile) SetCheckFileSizeTime(n int) {
 // SetCheckFileCountTime sets the interval (seconds) between count-policy passes,
 // mirroring C++ LOG_CHECK_FILE_COUNT_TIME.
 func (c *CYLoggerClearLogFile) SetCheckFileCountTime(n int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if n > 0 {
 		c.nCheckFileCountTime = n
 	}
@@ -142,7 +174,29 @@ func (c *CYLoggerClearLogFile) SetCheckFileCountTime(n int) {
 // written by an active appender are never removed. On the first pass it also
 // purges non-log files from the directory (mirroring C++ ProcessClearLog).
 func (c *CYLoggerClearLogFile) DoClear() {
-	if !c.bEnable || c.szLogDir == "" {
+	// Serialize concurrent DoClear invocations (scheduled goroutine + direct calls).
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
+
+	// Snapshot all configuration under the read lock so concurrent setters
+	// (e.g. a re-Init changing the log directory) can never race with a
+	// cleanup pass that is already in flight.
+	c.mu.RLock()
+	bEnable := c.bEnable
+	szLogDir := c.szLogDir
+	nExpiredHours := c.nExpiredHours
+	nFileCountPerType := c.nFileCountPerType
+	nCheckFileTypeSize := c.nCheckFileTypeSize
+	nCheckAllFileSize := c.nCheckAllFileSize
+	bEnableClearUnLogFile := c.bEnableClearUnLogFile
+	bFirstProcess := c.bFirstProcess
+	lastSizeCheck := c.lastSizeCheck
+	lastCountCheck := c.lastCountCheck
+	nCheckFileSizeTime := c.nCheckFileSizeTime
+	nCheckFileCountTime := c.nCheckFileCountTime
+	c.mu.RUnlock()
+
+	if !bEnable || szLogDir == "" {
 		return
 	}
 
@@ -150,14 +204,16 @@ func (c *CYLoggerClearLogFile) DoClear() {
 
 	// On first pass, purge non-log files (zip packages, stray files) exactly as
 	// C++ ProcessClearNonLog does on m_bFirstProcess.
-	if c.bFirstProcess && c.bEnableClearUnLogFile {
-		c.ProcessClearNonLog(c.enumerateNonLogFiles(c.szLogDir), inUse)
+	if bFirstProcess && bEnableClearUnLogFile {
+		c.ProcessClearNonLog(c.enumerateNonLogFiles(szLogDir), inUse)
 	}
 
-	files := c.enumerateLogFiles(c.szLogDir)
+	files := c.enumerateLogFiles(szLogDir)
 	if len(files) == 0 {
+		c.mu.Lock()
 		c.bFirstProcess = false
 		c.lastSizeCheck = time.Now()
+		c.mu.Unlock()
 		return
 	}
 
@@ -197,7 +253,7 @@ func (c *CYLoggerClearLogFile) DoClear() {
 		allTotal += size
 	}
 
-	expired := time.Now().Add(-time.Duration(c.nExpiredHours) * time.Hour)
+	expired := time.Now().Add(-time.Duration(nExpiredHours) * time.Hour)
 
 	// Per-type policies.
 	for _, g := range groups {
@@ -211,29 +267,31 @@ func (c *CYLoggerClearLogFile) DoClear() {
 		}
 		// 2) Per-type file count limit, gated by nCheckFileCountTime
 		// (LOG_CHECK_FILE_COUNT_TIME). It always runs on the first pass.
-		runCount := c.bFirstProcess || time.Since(c.lastCountCheck) > time.Duration(c.nCheckFileCountTime)*time.Second
-		if runCount && len(g.paths) > c.nFileCountPerType {
+		runCount := bFirstProcess || time.Since(lastCountCheck) > time.Duration(nCheckFileCountTime)*time.Second
+		if runCount && len(g.paths) > nFileCountPerType {
 			sortByModTime(g.paths)
-			toDelete := len(g.paths) - c.nFileCountPerType
+			toDelete := len(g.paths) - nFileCountPerType
 			for i := 0; i < toDelete; i++ {
 				if info, err := os.Stat(g.paths[i]); err == nil {
 					os.Remove(g.paths[i])
 					g.total -= info.Size()
 				}
 			}
+			c.mu.Lock()
 			c.lastCountCheck = time.Now()
+			c.mu.Unlock()
 		}
 	}
 
 	// 3) & 4) Size policies run on the first pass or when the size-check interval
 	// (nCheckFileSizeTime) has elapsed, mirroring C++ ProcessClearLog's gate.
-	runSize := c.bFirstProcess || time.Since(c.lastSizeCheck) > time.Duration(c.nCheckFileSizeTime)*time.Second
+	runSize := bFirstProcess || time.Since(lastSizeCheck) > time.Duration(nCheckFileSizeTime)*time.Second
 	if runSize {
 		for _, g := range groups {
 			// Per-type total size limit.
-			if g.total > int64(c.nCheckFileTypeSize) {
+			if g.total > int64(nCheckFileTypeSize) {
 				sortByModTime(g.paths)
-				for i := 0; i < len(g.paths) && g.total > int64(c.nCheckFileTypeSize); i++ {
+				for i := 0; i < len(g.paths) && g.total > int64(nCheckFileTypeSize); i++ {
 					if info, err := os.Stat(g.paths[i]); err == nil {
 						os.Remove(g.paths[i])
 						g.total -= info.Size()
@@ -242,19 +300,23 @@ func (c *CYLoggerClearLogFile) DoClear() {
 			}
 		}
 		// Global total size limit across all log files.
-		if allTotal > int64(c.nCheckAllFileSize) {
+		if allTotal > int64(nCheckAllFileSize) {
 			sortByModTime(allPaths)
-			for i := 0; i < len(allPaths) && allTotal > int64(c.nCheckAllFileSize); i++ {
+			for i := 0; i < len(allPaths) && allTotal > int64(nCheckAllFileSize); i++ {
 				if info, err := os.Stat(allPaths[i]); err == nil {
 					os.Remove(allPaths[i])
 					allTotal -= info.Size()
 				}
 			}
 		}
+		c.mu.Lock()
 		c.lastSizeCheck = time.Now()
+		c.mu.Unlock()
 	}
 
+	c.mu.Lock()
 	c.bFirstProcess = false
+	c.mu.Unlock()
 }
 
 // enumerateNonLogFiles recursively lists all files under dir that are NOT .log
@@ -353,16 +415,53 @@ func sortByModTime(paths []string) {
 }
 
 func (c *CYLoggerClearLogFile) StartSchedule() {
-	c.Start(func() {
-		ticker := time.NewTicker(time.Duration(c.nClearPeriodSec) * time.Second)
+	c.mu.Lock()
+	if c.chStop != nil {
+		// Already scheduled.
+		c.mu.Unlock()
+		return
+	}
+	chStop := make(chan struct{})
+	c.chStop = chStop
+	period := c.nClearPeriodSec
+	c.mu.Unlock()
+
+	c.stopWg.Add(1)
+	go func() {
+		defer func() {
+			// Never let a cleanup panic take down the process; the scheduled
+			// goroutine simply exits and will be respawned on the next Init.
+			recover()
+			c.stopWg.Done()
+		}()
+		ticker := time.NewTicker(time.Duration(period) * time.Second)
 		defer ticker.Stop()
-		for c.IsRunning() {
-			<-ticker.C
-			if c.bEnable {
-				c.DoClear()
+		for {
+			select {
+			case <-chStop:
+				return
+			case <-ticker.C:
+				if c.IsEnable() {
+					c.DoClear()
+				}
 			}
 		}
-	})
+	}()
+}
+
+// StopSchedule signals the background cleanup goroutine to exit and BLOCKS
+// until it has fully stopped. This guarantees that after UnInit no stale
+// goroutine keeps enumerating/deleting files in a directory that a subsequent
+// Init may have re-pointed elsewhere.
+func (c *CYLoggerClearLogFile) StopSchedule() {
+	c.mu.Lock()
+	ch := c.chStop
+	c.chStop = nil
+	c.mu.Unlock()
+	if ch != nil {
+		close(ch)
+	}
+	c.stopWg.Wait()
 }
 
 // CYLoggerDoZipLog compresses log files into zip archives.
@@ -498,7 +597,7 @@ func (s *CYLoggerSchedule) StopSchedule() {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.clearTask != nil {
-		s.clearTask.Stop()
+		s.clearTask.StopSchedule()
 	}
 }
 

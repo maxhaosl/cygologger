@@ -311,6 +311,17 @@ func WithMountMain(b bool) Option {
 	return func(c *Core.CYLoggerConfig) { c.SetMountMain(b) }
 }
 
+// WithThreadId enables or disables recording the goroutine ID (the T: field)
+// on every log line (default: true). Obtaining the goroutine ID requires a
+// runtime.Stack call whose internal runtime lock serialises ALL concurrent
+// logging goroutines — it is the dominant scalability bottleneck under high
+// concurrency. Latency/throughput-sensitive services should pass
+// WithThreadId(false); the T: field then renders as 0. This mirrors industry
+// practice: zap/zerolog do not record goroutine IDs by default.
+func WithThreadId(b bool) Option {
+	return func(c *Core.CYLoggerConfig) { c.SetWithThreadId(b) }
+}
+
 // WithRemoteAddr sets the remote log server address (host:port).
 // Default is "127.0.0.1:7000". Only used when WithWriteRemote(true) is also set.
 func WithRemoteAddr(addr string) Option {
