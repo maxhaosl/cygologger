@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-07-28
+
+### Added
+
+- **One-click verification gate** `Build/verify.sh`: chains `build → vet → test -race → bench (short) → all examples` (including `config_verify`'s 6 isolated `-opt` sub-processes) and prints a final `PASS/FAIL` summary; exits non-zero on any failure (no `timeout` dependency, macOS-safe)
+- **Unit tests** (stdlib `testing` only, zero third-party deps):
+  - `Filter/filter_test.go` — pattern-filter add/update/remove, defensive field copy, chain links, escape/delimiter semantics, chain & manager singletons
+  - `Encryption/encryption_test.go` — AES-256-GCM round-trip, nonce uniqueness, tamper/wrong-key detection, error paths, None pass-through, factory dispatch
+  - `Entity/entity_test.go` — appender add/remove, enable-aware write routing, aggregation (GetLogName/GetSize/Flush/ForceNewFile fan-out), UnInit detach, entity factory (with in-memory `fakeAppender`)
+  - `UpLoad/upload_test.go` — FTP upload end-to-end against an in-process stdlib FTP server (PASV parsing, path & byte-exact payload assertions)
+  - `Logger/logger_test.go` — level mapping, level/channel filters, hex formatting, caller capture, end-to-end write aggregation, pre-Init safety, statistics
+  - `Core/config_options_test.go`, `Core/defaults_test.go`, `Appender/rotation_verify_test.go`, `Schedule/cleanup_verify_test.go`
+- **Stability tests** `Logger/stability_test.go`: 16-goroutine concurrent mixed-type writes with live `SetLogLevel`/`Flush`, repeated Init/Close cycles with goroutine-leak check, idempotent Close, 2s sustained-load soak (`-short` aware); whole library is race-clean under `go test -race ./ICYLogger/...`
+- **Benchmarks** (`-benchmem`, allocs/op quantified): `Logger` (fmt/parallel/no-format/escape/hex/filtered), `Layout` (Buildin1–4, escaped, timestamps), `Common` (message pool, clone, FPS counter), `Appender` (file write serial/parallel)
+- **`examples/feature_verify` full feature matrix**: expanded to 90 checks across [A]–[X] (levels/types, channels, direct-bypass, escape, hex, scope, concurrency, layouts, rotation, cleanup, limits, zip, AES-GCM, statistics, panic capture, entity inspection, FTP upload end-to-end); prints per-feature PASS/FAIL and exits non-zero on failure
+- **`examples/config_verify`** and **`examples/limit_verify`**: isolated per-process option verification (console/remote/sys/file-mode/layout/defaults) and restriction-policy verification, with proper exit codes
+- **README**: new "One-Click Verification" section with stage table and feature matrix
+
+### Fixed
+
+- **`Logger/logger.go`**: `Init()` did not reset `bExit` after a prior `UnInit()`, so every write after the first `Close()` + re-`Init()` was silently dropped for the rest of the process
+- **`Appender/appender.go` (base appender)**: data race — producer-side `Write()`/`GetQueueSize()` read the `PublicQueue` pointer without the lock while the consumer's `swapAndProcess` swapped queue pointers under `a.mu`; queue pointers are now snapshotted under the lock (same fix applied to the `Flush`-fallback `processMessages`)
+- **`CYLoggerFileAppender` / `CYLoggerMainAppender`**: data race — synchronous `doWrite` read/wrote `a.file` / `a.szCurrentFile` without holding `a.mu`, racing against `rotateFileLocked` and the time-rotation ticker; the whole read-rotate-write sequence is now guarded by `a.mu`
+- **`api.go` `InitDefaultWithOpts`**: no longer forces `SetShowConsole(true)` before applying options, so an explicit `WithConsole(false)` is honoured (matches C++ `LOG_SHOW_CONSOLE_WINDOW=false` default; `InitDefault` still enables console for convenience)
+
 ## [0.2.0] - 2025-07-24
 
 ### Added

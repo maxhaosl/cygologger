@@ -97,6 +97,8 @@ type CYLoggerBaseAppender struct {
 	Common.CYNoCopy
 	mu              sync.Mutex
 	closeOnce       sync.Once // guarantees the queues are closed exactly once
+	stopOnce        sync.Once // guarantees stopCh is closed exactly once
+	wg              sync.WaitGroup
 	eLogType        Core.ELogType
 	szChannel       string
 	szFile          string
@@ -109,6 +111,7 @@ type CYLoggerBaseAppender struct {
 	PrivateQueue chan *Common.CYBaseMessage
 	swapCh       chan struct{} // signals the consumer to swap buffers
 	flushCh      chan chan struct{} // flush handshake: send a done chan, receive when drained
+	stopCh       chan struct{} // signals the consumer goroutine to exit
 	swapTick     *time.Ticker  // periodic swap trigger
 	fpsCounter   *Common.CYFPSCounter
 	layout       Layout.ICYLoggerTemplateLayout
@@ -127,6 +130,7 @@ func newBaseAppender(eLogType Core.ELogType, szChannel, szFile, szLogPath string
 		PrivateQueue:    make(chan *Common.CYBaseMessage, 8192),
 		swapCh:          make(chan struct{}, 1),
 		flushCh:         make(chan chan struct{}),
+		stopCh:          make(chan struct{}),
 	}
 	app.fpsCounter = Common.NewCYFPSCounter(Core.LOG_FPS_CHECK_DURATION)
 	app.fpsCounter.Start()
@@ -146,7 +150,11 @@ func (a *CYLoggerBaseAppender) SetLayout(pLayout Layout.ICYLoggerTemplateLayout)
 func (a *CYLoggerBaseAppender) GetFilter() *Filter.ICYLoggerPatternFilter   { return a.filter }
 func (a *CYLoggerBaseAppender) SetFilter(pFilter *Filter.ICYLoggerPatternFilter) { a.filter = pFilter }
 func (a *CYLoggerBaseAppender) GetFPSCounter() *Common.CYFPSCounter  { return a.fpsCounter }
-func (a *CYLoggerBaseAppender) GetQueueSize() int                     { return len(a.PublicQueue) + len(a.PrivateQueue) }
+func (a *CYLoggerBaseAppender) GetQueueSize() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return len(a.PublicQueue) + len(a.PrivateQueue)
+}
 
 // GetId returns the log-type id of this appender.
 func (a *CYLoggerBaseAppender) GetId() Core.ELogType { return a.eLogType }
@@ -168,14 +176,31 @@ func (a *CYLoggerBaseAppender) Copy(target string) {}
 // ClearContents truncates the backing store. No-op for in-memory appenders.
 func (a *CYLoggerBaseAppender) ClearContents() {}
 
+// Start launches the consumer goroutine. The WaitGroup lets UnInit block until
+// Run has fully exited, so the data channels are only closed once there are no
+// remaining receivers (this is what removes the close-vs-receive data race).
+func (a *CYLoggerBaseAppender) Start(run func()) {
+	a.wg.Add(1)
+	a.CYNamedThread.Start(run)
+}
+
+// Stop signals the consumer goroutine to exit by closing stopCh, then delegates
+// to the embedded CYNamedThread.Stop for the context/running flag.
+func (a *CYLoggerBaseAppender) Stop() {
+	a.stopOnce.Do(func() { close(a.stopCh) })
+	a.CYNamedThread.Stop()
+}
+
 func (a *CYLoggerBaseAppender) Init() bool { return true }
 
 func (a *CYLoggerBaseAppender) UnInit() {
-	// Stop the goroutine and swap ticker.
+	// Stop the consumer goroutine and wait for it to finish. This guarantees no
+	// goroutine is still receiving from PublicQueue/PrivateQueue when we close
+	// them below, eliminating the close-vs-receive data race caught by -race.
+	// (The swap ticker is created inside swapLoop and stopped by its own
+	// deferred Stop once the loop observes the goroutine is no longer running.)
 	a.Stop()
-	if a.swapTick != nil {
-		a.swapTick.Stop()
-	}
+	a.wg.Wait()
 	// Close the queues exactly once, even if UnInit is invoked more than once
 	// (e.g. via both Flush and UnInit paths) or concurrently. Closing an already
 	// closed channel panics, so this guard is essential for safe shutdown.
@@ -222,8 +247,19 @@ func (a *CYLoggerBaseAppender) Write(pMsg *Common.CYBaseMessage) bool {
 		return false
 	}
 	clone := pMsg.Clone()
+	// Snapshot the (consumer-swapped) public queue pointer under a.mu so the
+	// send cannot race with swapAndProcess, which swaps the same pointers
+	// under that lock. The channel object itself stays valid for the duration
+	// of the send because UnInit stops the consumer before closing the queues.
+	a.mu.Lock()
+	pub := a.PublicQueue
+	a.mu.Unlock()
+	if pub == nil {
+		Common.ReleaseBaseMessage(clone)
+		return false
+	}
 	select {
-	case a.PublicQueue <- clone:
+	case pub <- clone:
 		return true
 	default:
 		Common.ReleaseBaseMessage(clone)
@@ -238,6 +274,8 @@ func (a *CYLoggerBaseAppender) swapLoop() {
 	stats := Statistics.GetCYStatisticsInstance()
 	for a.IsRunning() {
 		select {
+		case <-a.stopCh:
+			return
 		case <-a.swapTick.C:
 			// Snapshot the live queue lengths and push them to the global
 			// statistics (mirrors C++ appender::UpdatePublicStats /
@@ -260,6 +298,7 @@ func (a *CYLoggerBaseAppender) swapLoop() {
 // (PublicQueue) and periodically swaps to drain the accumulated backlog
 // from the back (PrivateQueue) lock-free.
 func (a *CYLoggerBaseAppender) Run() {
+	defer a.wg.Done()
 	go a.swapLoop()
 	for a.IsRunning() {
 		select {
@@ -275,6 +314,12 @@ func (a *CYLoggerBaseAppender) Run() {
 			a.swapAndProcess()
 			a.processMessages()
 			close(done)
+		case <-a.stopCh:
+			// Stop requested: drain any pending messages, then exit. After this
+			// returns Run no longer receives from the data channels, so UnInit
+			// can close them without a close-vs-receive race.
+			a.processMessages()
+			return
 		}
 	}
 }
@@ -304,11 +349,20 @@ func (a *CYLoggerBaseAppender) drainPrivateQueue() {
 	}
 }
 
-// processMessages drains the PublicQueue synchronously (used during shutdown).
+// processMessages drains the PublicQueue synchronously (used during shutdown
+// and as the Flush fallback when the consumer goroutine is busy). The queue
+// pointer is snapshotted under a.mu so reading it cannot race with the
+// consumer's swapAndProcess, which swaps the same pointers under that lock.
 func (a *CYLoggerBaseAppender) processMessages() {
+	a.mu.Lock()
+	pub := a.PublicQueue
+	a.mu.Unlock()
+	if pub == nil {
+		return
+	}
 	for {
 		select {
-		case msg, ok := <-a.PublicQueue:
+		case msg, ok := <-pub:
 			if !ok {
 				return
 			}
@@ -427,6 +481,7 @@ type CYLoggerFileAppender struct {
 	restriction    *Common.CYFileRestriction
 	timeRotator    *time.Ticker
 	stopCh         chan struct{}
+	stopOnce       sync.Once
 	statsLine      atomic.Int64
 	statsByte      atomic.Int64
 }
@@ -459,23 +514,16 @@ func (a *CYLoggerFileAppender) Init() bool {
 }
 
 func (a *CYLoggerFileAppender) UnInit() {
-	a.Stop()
-	close(a.stopCh)
+	// Stop the time-rotation ticker goroutine first.
+	a.stopOnce.Do(func() { close(a.stopCh) })
 	if a.timeRotator != nil {
 		a.timeRotator.Stop()
 	}
 	a.Flush()
-	// Close the queues exactly once (shared closeOnce with the embedded base).
-	a.closeOnce.Do(func() {
-		if a.PublicQueue != nil {
-			close(a.PublicQueue)
-			a.PublicQueue = nil
-		}
-		if a.PrivateQueue != nil {
-			close(a.PrivateQueue)
-			a.PrivateQueue = nil
-		}
-	})
+	// Delegate data-channel draining / goroutine stop to the base, which waits
+	// for Run to exit (via its WaitGroup) before closing the channels — this is
+	// what removes the close-vs-receive data race on shutdown.
+	a.CYLoggerBaseAppender.UnInit()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.file != nil {
@@ -555,7 +603,11 @@ func (a *CYLoggerFileAppender) rotateFileLocked() {
 	// per-type file count and total size limits across those generations.
 	if a.szCurrentFile != "" {
 		if rotated := a.rotatedName(); rotated != a.szCurrentFile {
-			_ = os.Rename(a.szCurrentFile, rotated)
+			if err := os.Rename(a.szCurrentFile, rotated); err != nil {
+				Common.GetCYExceptionLogFileInstance().WriteLog(
+					fmt.Sprintf("log rotation failed: %s -> %s: %v", a.szCurrentFile, rotated, err),
+					"appender", "rotateFileLocked", 0)
+			}
 		}
 	}
 	// Reopen: the original name no longer exists, so a fresh empty file is created.
@@ -585,6 +637,12 @@ func (a *CYLoggerFileAppender) Write(pMsg *Common.CYBaseMessage) bool {
 }
 
 func (a *CYLoggerFileAppender) doWrite(msg string) {
+	// The file appender writes synchronously from arbitrary caller goroutines,
+	// so a.file / szCurrentFile must be guarded for the whole read-rotate-write
+	// sequence. Without this, concurrent Write calls (and the time-rotation
+	// ticker) race on the open file handle and current-file name.
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	if a.file == nil {
 		return
 	}
@@ -647,7 +705,11 @@ func (a *CYLoggerFileAppender) Copy(target string) {
 	}
 	if a.szCurrentFile != "" {
 		pc := Common.GetCYPublicFunctionInstance()
-		_ = pc.CopyFile(a.szCurrentFile, target)
+		if err := pc.CopyFile(a.szCurrentFile, target); err != nil {
+			Common.GetCYExceptionLogFileInstance().WriteLog(
+				fmt.Sprintf("log copy failed: %s -> %s: %v", a.szCurrentFile, target, err),
+				"appender", "Copy", 0)
+		}
 	}
 	a.openFile()
 }
@@ -694,6 +756,11 @@ func (a *CYLoggerMainAppender) Write(pMsg *Common.CYBaseMessage) bool {
 }
 
 func (a *CYLoggerMainAppender) doWrite(msg string) {
+	// Mirrors CYLoggerFileAppender.doWrite: the file handle and current-file
+	// name are shared across concurrent Write callers and the time-rotation
+	// ticker, so the whole sequence must be guarded by a.mu.
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	if a.file == nil {
 		return
 	}
@@ -747,6 +814,7 @@ func (a *CYLoggerBufferAppender) Write(pMsg *Common.CYBaseMessage) bool {
 }
 
 func (a *CYLoggerBufferAppender) Run() {
+	defer a.wg.Done()
 	a.flushTicks = time.NewTicker(time.Second)
 	defer a.flushTicks.Stop()
 
@@ -767,6 +835,12 @@ func (a *CYLoggerBufferAppender) Run() {
 
 	for a.IsRunning() {
 		select {
+		case <-a.stopCh:
+			// Stop requested: drain pending messages, then exit. Run no longer
+			// receives from the data channels, so UnInit can close them safely.
+			a.drainAndSort(&buffer, &bufMu)
+			a.processMessages()
+			return
 		case <-a.flushTicks.C:
 			a.drainAndSort(&buffer, &bufMu)
 		case msg, ok := <-a.PublicQueue:
@@ -867,13 +941,13 @@ const remoteUDPPacketSize = 900
 // (900-byte packets, mirroring the C++ wire format).
 type CYLoggerRemoteAppender struct {
 	*CYLoggerBaseAppender
-	mu          struct{}
 	sync.RWMutex
 	remoteAddr  string
 	eRemoteProto Core.ERemoteProto
 	conn        net.Conn
 	reconnectCh chan struct{}
 	stopCh      chan struct{}
+	stopOnce    sync.Once
 }
 
 func newRemoteAppender(eLogType Core.ELogType, szChannel, szFile, szLogPath string, eFileMode Core.ELogFileMode, eProto Core.ERemoteProto) *CYLoggerRemoteAppender {
@@ -930,7 +1004,10 @@ func (a *CYLoggerRemoteAppender) Init() bool {
 }
 
 func (a *CYLoggerRemoteAppender) UnInit() {
-	close(a.stopCh)
+	// Stop the reconnect-loop goroutine.
+	a.stopOnce.Do(func() { close(a.stopCh) })
+	// Delegate data-channel draining / goroutine stop to the base.
+	a.CYLoggerBaseAppender.UnInit()
 	a.Lock()
 	defer a.Unlock()
 	if a.conn != nil {
@@ -1011,6 +1088,7 @@ type CYLoggerSystemAppender struct {
 	bEnable     atomic.Bool
 	PublicQueue chan *Common.CYBaseMessage
 	stopCh      chan struct{}
+	stopOnce    sync.Once
 	fpsCounter  *Common.CYFPSCounter
 }
 
@@ -1045,7 +1123,7 @@ func (a *CYLoggerSystemAppender) Init() bool {
 }
 
 func (a *CYLoggerSystemAppender) UnInit() {
-	close(a.stopCh)
+	a.stopOnce.Do(func() { close(a.stopCh) })
 	a.mu.Lock()
 	if a.writer != nil {
 		a.writer.Close()
@@ -1238,6 +1316,18 @@ func (f *CYLoggerAppenderFactory) UnregisterAppender(app IAppender) {
 			return
 		}
 	}
+}
+
+// Reset clears every registered appender. It is called on logger shutdown so a
+// subsequent InitDefaultWithOpts in the same process starts from a clean slate
+// (otherwise previously-mounted remote/sys/console appenders would leak across
+// re-initializations and make config options like LOG_WRITE_REMOTE=false appear
+// ineffective). The factory singleton itself is preserved; only its registry is
+// emptied.
+func (f *CYLoggerAppenderFactory) Reset() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.apps = make(map[Core.ELogType][]IAppender)
 }
 
 func (f *CYLoggerAppenderFactory) GetAppenders(eLogType Core.ELogType) []IAppender {

@@ -393,6 +393,63 @@ ICYLogger/
     └── CYLoggerSchedule.go # Background expired-file cleanup + zip
 ```
 
+## One-Click Verification
+
+CYGoLogger ships with a single command that proves **every** feature works, is
+stable under `-race`, and performs well — the same gate used to keep the library
+commercial-grade:
+
+```bash
+bash Build/verify.sh
+```
+
+It chains the following stages and exits non-zero the moment any stage fails:
+
+| Stage | Command | What it proves |
+|-------|---------|----------------|
+| `build` | `go build ./...` | the whole module compiles |
+| `vet` | `go vet ./...` | static correctness |
+| `test-race` | `go test -race ./...` | functional + **stability** (concurrent writes, repeated Init/Close, graceful Flush) is race-clean |
+| `bench` | `go test -bench=. -benchmem -benchtime 100x -run '^$'` | **efficiency** — throughput & `allocs/op` for write/layout/hex/escape/queue paths |
+| `examples` | `go run .` in every `examples/*` | end-to-end behaviour, incl. `config_verify`'s 6 isolated `-opt` sub-processes (console / remote / sys / file-mode / layout / defaults) |
+
+The final summary prints a `PASS: N  FAIL: M` matrix. macOS has no `timeout`
+command, so the script never wraps stages in a timeout; the benchmark step uses
+a short `-benchtime 100x` so a CI runner cannot hang.
+
+### Feature matrix
+
+The `examples/feature_verify` program is a human-readable feature matrix: it
+exercises each capability through the public API and prints one `PASS`/`FAIL`
+line per feature, e.g.
+
+```
+[K] Log levels & types (Trace/Debug/Info/Warn/Error/Fatal/Main)   ... PASS
+[L] Channel-aware logging                                         ... PASS
+[M] Direct logging bypasses level filter                          ... PASS
+[N] Escape-formatted logging                                      ... PASS
+[O] Hex dump logging                                              ... PASS
+[P] Scope enter/exit logging                                      ... PASS
+[Q] Concurrent async-safe writes                                  ... PASS
+[R] Template layouts Buildin1..4                                  ... PASS
+[S] Compression (ZipLog)                                          ... PASS
+[T] AES-256-GCM encryption                                        ... PASS
+[U] Statistics counters                                           ... PASS
+[V] Panic / exception capture                                     ... PASS
+[W] Entity inspection                                             ... PASS
+[X] FTP upload (in-process server, end-to-end)                     ... PASS
+=== RESULT: 90 passed, 0 failed ===
+```
+
+### What is covered
+
+- **Levels & types**: Trace/Debug/Info/Warn/Error/Fatal/Main/Remote/Sys + `*Ch` channel variants.
+- **Destinations**: console, file, Main, remote (TCP/UDP), system/syslog.
+- **Rotation & limits**: per-file size + time rolling, expired-file cleanup, per-type count, per-type size, global size caps, non-log-file purge.
+- **Async architecture**: double-buffered swap loop, `Flush`/`Close` graceful drain, no goroutine/appender leaks across repeated Init/Close.
+- **Formatting**: 4 built-in layouts + custom, hex dumps, escape formatting.
+- **Robustness**: level/channel filters, panic capture (`SafeGo`/`Recover`), `ForceNewFile`, AES-256-GCM encryption, FTP upload, zip compression, live statistics, `Entity` inspection.
+
 ## License
 
 CYGoLogger is licensed under the MIT License. See [LICENSE](LICENSE) for details.

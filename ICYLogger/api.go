@@ -270,7 +270,10 @@ func InitDefault(logPath string) bool {
 // Option is a functional option for configuring InitDefaultWithOpts.
 type Option func(*Core.CYLoggerConfig)
 
-// WithConsole enables or disables console output (default: enabled).
+// WithConsole enables or disables console output. The C++ default for
+// LOG_SHOW_CONSOLE_WINDOW is false; InitDefault turns it on for convenience,
+// while InitDefaultWithOpts honours whatever the caller passes (no forced
+// default), so WithConsole(false) actually disables the console appender.
 func WithConsole(b bool) Option {
 	return func(c *Core.CYLoggerConfig) { c.SetShowConsole(b) }
 }
@@ -355,7 +358,10 @@ func DefaultConfig() *Core.CYLoggerConfig { return Core.DefaultConfig() }
 func InitDefaultWithOpts(logPath string, opts ...Option) bool {
 	config := Core.GetCYLoggerConfigInstance()
 	config.SetLogPath(logPath)
-	config.SetShowConsole(true) // sensible default
+	// NOTE: do NOT force a console default here — that would override an explicit
+	// WithConsole(false) and break LOG_SHOW_CONSOLE_WINDOW=false. InitDefault (the
+	// no-options entry point) already passes WithConsole(true), and the config
+	// singleton's own default for bShowConsole is false, matching the C++ default.
 	for _, opt := range opts {
 		opt(config)
 	}

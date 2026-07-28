@@ -87,11 +87,14 @@ func GetCYLoggerControlInstance() *CYLoggerControl {
 func (c *CYLoggerControl) Init(szLogPath string, bShowConsole, bWriteRemote, bWriteSys bool,
 	eFileMode Core.ELogFileMode, szRemoteAddr string) bool {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	c.szLogPath = szLogPath
 	c.filter = Filter.GetCYLoggerPatternFilterManagerInstance().GetFilter()
-	c.layout = Layout.GetCYLoggerTemplateLayoutManagerInstance().GetLayout(Core.DefaultLogLayoutType)
+	// Honour the LOG_LAYOUT_TYPE config option (set via WithLayoutType / the
+	// C++ LOG_LAYOUT_TYPE default) instead of the hardcoded default, so a caller
+	// can select a different template at Init time. The runtime SetLayout shortcut
+	// still works for post-Init changes.
+	cfg := Core.GetCYLoggerConfigInstance()
+	c.layout = Layout.GetCYLoggerTemplateLayoutManagerInstance().GetLayout(cfg.GetLayoutType())
 
 	if bShowConsole || c.consoleApp == nil {
 		if c.consoleApp != nil {
@@ -101,11 +104,15 @@ func (c *CYLoggerControl) Init(szLogPath string, bShowConsole, bWriteRemote, bWr
 		c.consoleApp.SetLayout(c.layout)
 		c.consoleApp.SetFilter(c.filter)
 	}
+	c.mu.Unlock()
 
 	// Auto-mount per-type file appenders, mirroring the C++ CY_LOG_APPENDER macro
-	// which attaches Trace/Debug/Info/Warn/Error/Fatal/Main file appenders in one shot.
-	// If the caller already registered an appender for a type (manual AddAppender),
-	// auto-mounting skips it to avoid duplicates.
+	// which attaches Trace/Debug/Info/Warn/Error/Fatal/Main file appenders in one
+	// shot. If the caller already registered an appender for a type (manual
+	// AddAppender), auto-mounting skips it to avoid duplicates.
+	//
+	// IMPORTANT: AddAppender locks c.mu itself, so we must NOT hold c.mu here —
+	// holding it across the call would deadlock (sync.RWMutex is not reentrant).
 	fileTypes := []Core.ELogType{
 		Core.LogTypeTrace, Core.LogTypeDebug, Core.LogTypeInfo,
 		Core.LogTypeWarn, Core.LogTypeError, Core.LogTypeFatal, Core.LogTypeMain,
@@ -122,9 +129,13 @@ func (c *CYLoggerControl) Init(szLogPath string, bShowConsole, bWriteRemote, bWr
 		c.AddAppender(Core.LogTypeRemote, "", szRemoteAddr, eFileMode)
 	}
 
+	// Apply the restriction configuration and start the cleanup schedule. These
+	// touch c.schedule / c.restriction, so guard them under c.mu again.
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	// Apply the restriction configuration stored in CYLoggerConfig to the runtime
 	// restriction object so a single Init applies the same defaults/options as C++.
-	cfg := Core.GetCYLoggerConfigInstance()
 	c.SetRestriction(cfg.IsLimitEnable(), cfg.IsClearUnLogFile(),
 		cfg.GetTimeClearLog(), cfg.GetTimeExpiredFile(),
 		cfg.GetCheckFileSizeTime(), cfg.GetCheckFileCountTime(),
@@ -155,6 +166,8 @@ func (c *CYLoggerControl) Init(szLogPath string, bShowConsole, bWriteRemote, bWr
 // hasAppender reports whether the entity for eLogType already holds an appender,
 // so auto-mounting never duplicates a manually registered appender.
 func (c *CYLoggerControl) hasAppender(eLogType Core.ELogType) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	if e := c.entities[eLogType]; e != nil {
 		return e.GetAppenderCount() > 0
 	}
@@ -171,6 +184,12 @@ func (c *CYLoggerControl) UnInit() {
 	if c.consoleApp != nil {
 		c.consoleApp.UnInit()
 	}
+	// Drop the cached console appender and the appender registry so a later
+	// InitDefaultWithOpts in the same process re-evaluates every config option
+	// (LOG_SHOW_CONSOLE_WINDOW / LOG_WRITE_REMOTE / LOG_WRITE_SYS) from scratch
+	// instead of leaking appenders mounted by a previous initialization.
+	c.consoleApp = nil
+	Appender.GetCYLoggerAppenderFactoryInstance().Reset()
 	Entity.GetCYLoggerEntityFactoryInstance().UnInitAll()
 }
 
@@ -203,6 +222,9 @@ func (c *CYLoggerControl) AddAppender(eLogType Core.ELogType, szChannel, szFile 
 	appender_.SetEnable(true)
 
 	if eLogType == Core.LogTypeConsole {
+		// c.consoleApp is read by Write under c.mu.RLock, so the write must be
+		// serialized with the same lock.
+		c.mu.Lock()
 		if c.consoleApp != nil {
 			c.consoleApp.UnInit()
 		}
@@ -210,17 +232,17 @@ func (c *CYLoggerControl) AddAppender(eLogType Core.ELogType, szChannel, szFile 
 		c.consoleApp.SetLayout(c.layout)
 		c.consoleApp.SetFilter(c.filter)
 		c.consoleApp.SetEnable(true)
+		c.mu.Unlock()
 		return true
 	}
 
-	entityItem := c.entities[eLogType]
-	if entityItem == nil {
-		entityFactory := Entity.GetCYLoggerEntityFactoryInstance()
-		entityItem = entityFactory.CreateEntity(eLogType)
-		c.mu.Lock()
-		c.entities[eLogType] = entityItem
-		c.mu.Unlock()
-	}
+	// The entities map is read by Write under c.mu.RLock, so the lookup+insert
+	// must be serialized with the same lock to avoid a data race.
+	entityFactory := Entity.GetCYLoggerEntityFactoryInstance()
+	entityItem := entityFactory.CreateEntity(eLogType)
+	c.mu.Lock()
+	c.entities[eLogType] = entityItem
+	c.mu.Unlock()
 
 	entityItem.AddAppender(appender_)
 	factory.RegisterAppender(appender_)
@@ -412,6 +434,10 @@ func (l *CYLoggerImpl) Init() bool {
 		return false
 	}
 
+	// Reset the exit flag so a re-Init after UnInit (Close) accepts writes
+	// again. Without this, every Write* silently drops messages for the rest
+	// of the process lifetime after the first Close.
+	l.bExit.Store(false)
 	l.bInit.Store(true)
 	return true
 }
