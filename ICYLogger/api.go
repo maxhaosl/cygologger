@@ -35,6 +35,7 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"sync/atomic"
 
 	Appender "github.com/maxhaosl/CYGoLogger/ICYLogger/Appender"
 	Common "github.com/maxhaosl/CYGoLogger/ICYLogger/Common"
@@ -47,14 +48,27 @@ import (
 	UpLoad "github.com/maxhaosl/CYGoLogger/ICYLogger/UpLoad"
 )
 
+// callerSkip is the extra stack-frame count added on top of the base capture
+// skip (1) when resolving the source location of every log line. It is set
+// through WithCallerSkip (typically by a thin wrapper library) and kept in a
+// lock-free atomic so the hot logging path never takes a config mutex.
+var callerSkip int32
+
 // =============================================================================
 // Internal helpers
 // =============================================================================
 
 // apiCallerInfo captures the caller's file, function name, and line number
-// from the perspective of a top-level API function. skip=1 yields the caller
-// of the exported function (e.g. Debug, Info), which is the user's source location.
+// from the perspective of a top-level API function. The effective skip is
+// 1 + callerSkip: 1 lands on the immediate caller of the API function, and
+// the extra callerSkip frames let a wrapper library skip its own frames so
+// the rendered [func(line)] points at the end user's code rather than the
+// wrapper. Marked //go:noinline so the stack-frame arithmetic is deterministic
+// regardless of compiler inlining decisions.
+//
+//go:noinline
 func apiCallerInfo(skip int) (file, funcName string, line int) {
+	skip += int(atomic.LoadInt32(&callerSkip))
 	pc, file, line, ok := runtime.Caller(skip)
 	if !ok {
 		return "???", "???", 0
@@ -309,6 +323,25 @@ func WithLogLevel(f Core.ELogLevelFilter) Option {
 // project's Debug = Trace/Info/Warn/Error, Release = Error only).
 func WithMountMain(b bool) Option {
 	return func(c *Core.CYLoggerConfig) { c.SetMountMain(b) }
+}
+
+// WithCallerSkip sets how many extra stack frames to skip when capturing the
+// source location (file/func/line) rendered on every log line. This is for
+// thin wrapper libraries that expose their own logging functions on top of
+// CYGoLogger: the base capture already skips 1 frame (the API function), and
+// the wrapper must skip its own frames so [func(line)] points at the end
+// user's code rather than the wrapper. For a single-level wrapper
+// (user -> wrapper.Info -> Info) pass 2 (the wrapper frame + the API frame);
+// for n wrapper layers pass n+1. A negative value is clamped to 0 (the
+// historical behaviour, which shows the API function itself).
+func WithCallerSkip(n int) Option {
+	if n < 0 {
+		n = 0
+	}
+	return func(c *Core.CYLoggerConfig) {
+		c.SetCallerSkip(n)
+		atomic.StoreInt32(&callerSkip, int32(n))
+	}
 }
 
 // WithThreadId enables or disables recording the goroutine ID (the T: field)

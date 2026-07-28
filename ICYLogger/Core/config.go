@@ -60,6 +60,15 @@ type CYLoggerConfig struct {
 	// industry practice (zap/zerolog do not record goroutine IDs by default).
 	bWithThreadId bool
 
+	// nCallerSkip adds extra stack frames to skip when capturing the caller
+	// location (file/func/line) rendered on every log line. The base capture
+	// uses skip=1 (the immediate caller of the API function). Thin wrapper
+	// libraries that expose their own logging functions on top of CYGoLogger
+	// set this to the number of wrapper frames between the end user and
+	// CYGoLogger (e.g. 2 for a single-level wrapper: user -> wrapper.Info ->
+	// Info). Default 0 keeps the historical behaviour.
+	nCallerSkip int
+
 	// szRemoteAddr is the remote log server address (host:port). It mirrors the
 	// C++ CY_LOG_APPENDER remote endpoint (default 127.0.0.1:7000).
 	szRemoteAddr string
@@ -101,6 +110,7 @@ func GetCYLoggerConfigInstance() *CYLoggerConfig {
 			eLogLevelFilter: DefaultLogLevelFilter,
 			bMountMain:      LOG_MOUNT_MAIN,
 			bWithThreadId:   LOG_WITH_THREAD_ID,
+			nCallerSkip:     0,
 
 			szRemoteAddr:          "127.0.0.1:7000",
 			eRemoteProto:          RemoteProtoTCP,
@@ -277,6 +287,27 @@ func (c *CYLoggerConfig) IsWithThreadId() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.bWithThreadId
+}
+
+// SetCallerSkip sets the extra caller-skip frames used when capturing the
+// source location (file/func/line) of every log line. See the nCallerSkip
+// field comment for how to choose the value; a thin wrapper library that adds
+// one layer between the user and CYGoLogger (e.g. user -> wrapper.Info ->
+// Info) typically passes 2 (the wrapper frame + the API frame itself).
+func (c *CYLoggerConfig) SetCallerSkip(n int) {
+	if n < 0 {
+		n = 0
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.nCallerSkip = n
+}
+
+// GetCallerSkip returns the configured extra caller-skip frames.
+func (c *CYLoggerConfig) GetCallerSkip() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.nCallerSkip
 }
 
 // =============================================================================
