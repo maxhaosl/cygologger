@@ -124,9 +124,17 @@ func (e *CYLoggerEntity) GetAppenderCount() int {
 }
 
 func (e *CYLoggerEntity) Write(msg *Common.CYBaseMessage) {
+	// Take a short RLock ONLY to snapshot the (stable, post-Init) appender list,
+	// then release it before calling app.Write. The layout formatting inside
+	// app.Write is CPU-heavy; holding entity.mu across it serialised every
+	// concurrent producer on the runtime RWMutex word (the dominant scalability
+	// bottleneck observed in CPU profiles). Appenders are never removed from a
+	// live entity except by UnInit, which only runs after all writers have
+	// exited, so the snapshot is safe to use lock-free here.
 	e.mu.RLock()
-	defer e.mu.RUnlock()
-	for _, app := range e.appenders {
+	apps := e.appenders
+	e.mu.RUnlock()
+	for _, app := range apps {
 		if !app.IsEnable() {
 			continue
 		}

@@ -44,6 +44,66 @@ import (
 	"github.com/maxhaosl/CYGoLogger/ICYLogger/Common"
 )
 
+// builderPool reuses strings.Builder instances across GetFormatMessage calls to
+// keep per-line heap allocations minimal. The final sb.String() copies the bytes
+// into an immutable string, which does NOT alias the pooled buffer, so returning
+// it after the builder is Put back is safe.
+var builderPool = sync.Pool{New: func() any { return &strings.Builder{} }}
+
+// appendUint / appendInt write an integer directly into b via strconv.AppendXxx
+// over a stack scratch buffer, so no intermediate string is allocated (strconv's
+// Sprintf/Itoa variants would each heap-allocate a string on every log line).
+func appendUint(b *strings.Builder, v uint64) {
+	var tmp [20]byte
+	b.Write(strconv.AppendUint(tmp[:0], v, 10))
+}
+
+func appendInt(b *strings.Builder, v int) {
+	var tmp [20]byte
+	b.Write(strconv.AppendInt(tmp[:0], int64(v), 10))
+}
+
+// appendTimestamp writes "YYYY-MM-DD HH:MM:SS.mmm" into b using a stack scratch
+// buffer, replacing the per-call fmt.Sprintf that GetTimeStamps used (which
+// allocated a string on every log line). This alone removes one of the largest
+// steady-state allocations on the hot path.
+func appendTimestamp(b *strings.Builder, nYY, nMM, nDD, nHR, nMN, nSC, nMMN int) {
+	var buf [32]byte
+	n := appendPadded(buf[:], nYY, 4)
+	buf[n] = '-'
+	n++
+	n += appendPadded(buf[n:], nMM, 2)
+	buf[n] = '-'
+	n++
+	n += appendPadded(buf[n:], nDD, 2)
+	buf[n] = ' '
+	n++
+	n += appendPadded(buf[n:], nHR, 2)
+	buf[n] = ':'
+	n++
+	n += appendPadded(buf[n:], nMN, 2)
+	buf[n] = ':'
+	n++
+	n += appendPadded(buf[n:], nSC, 2)
+	buf[n] = '.'
+	n++
+	n += appendPadded(buf[n:], nMMN, 3)
+	b.Write(buf[:n])
+}
+
+// appendPadded writes v zero-padded to width digits into buf and returns the
+// number of bytes written (always == width).
+func appendPadded(buf []byte, v, width int) int {
+	var tmp [20]byte
+	s := strconv.AppendInt(tmp[:0], int64(v), 10)
+	k := 0
+	for k < width-len(s) {
+		buf[k] = '0'
+		k++
+	}
+	return k + copy(buf[k:], s)
+}
+
 // CYLoggerTemplateLayoutEscape provides escape character handling for layouts.
 type CYLoggerTemplateLayoutEscape struct{}
 
@@ -113,7 +173,9 @@ func (l *CYLoggerTemplateLayout1) GetFormatMessage(strChannel string, eMsgType C
 	nYY, nMM, nDD, nHR, nMN, nSC, nMMN int,
 	bEscape bool) string {
 
-	var sb strings.Builder
+	sb := builderPool.Get().(*strings.Builder)
+	sb.Reset()
+	sb.Grow(256)
 	hs := Common.LogHeaderStart
 	he := Common.LogHeaderEnd
 	fv := Common.LogFieldValueEnd
@@ -122,6 +184,9 @@ func (l *CYLoggerTemplateLayout1) GetFormatMessage(strChannel string, eMsgType C
 
 	// [Time]
 	sb.WriteRune(hs)
+	// Buildin3 keeps the SHORT time format ("HH:MM:SS", no date, no ms) — its
+	// GetTimeStamps is deliberately different from the full-date layouts 1/2/4,
+	// so it must use the layout's own formatter rather than appendTimestamp.
 	sb.WriteString(l.GetTimeStamps(nYY, nMM, nDD, nHR, nMN, nSC, nMMN))
 	sb.WriteRune(he)
 
@@ -130,7 +195,7 @@ func (l *CYLoggerTemplateLayout1) GetFormatMessage(strChannel string, eMsgType C
 	if nSeverCode >= 0 {
 		sb.WriteString(layoutTypeCode(eMsgType))
 		sb.WriteRune(':')
-		sb.WriteString(strconv.Itoa(nSeverCode))
+		appendInt(sb, nSeverCode)
 	} else {
 		sb.WriteString(layoutTypeCode(eMsgType))
 	}
@@ -138,12 +203,12 @@ func (l *CYLoggerTemplateLayout1) GetFormatMessage(strChannel string, eMsgType C
 	// |P:pid
 	sb.WriteRune(fv)
 	sb.WriteString("P:")
-	sb.WriteString(strconv.FormatUint(nProcessId, 10))
+	appendUint(sb, nProcessId)
 
 	// |T:tid
 	sb.WriteRune(fv)
 	sb.WriteString("T:")
-	sb.WriteString(strconv.FormatUint(nThreadId, 10))
+	appendUint(sb, nThreadId)
 
 	// |Key=Value#... (extension field via the pattern filter)
 	if bEscape && l.escape != nil {
@@ -159,7 +224,7 @@ func (l *CYLoggerTemplateLayout1) GetFormatMessage(strChannel string, eMsgType C
 	sb.WriteString("::")
 	sb.WriteString(strFunction)
 	sb.WriteRune('(')
-	sb.WriteString(strconv.Itoa(nLine))
+	appendInt(sb, nLine)
 	sb.WriteRune(')')
 	sb.WriteRune(he)
 
@@ -175,7 +240,9 @@ func (l *CYLoggerTemplateLayout1) GetFormatMessage(strChannel string, eMsgType C
 
 	sb.WriteString(strMsg)
 	sb.WriteString("\n")
-	return sb.String()
+	out := sb.String()
+	builderPool.Put(sb)
+	return out
 }
 
 func (l *CYLoggerTemplateLayout1) typeName(e Core.ELogType) string {
@@ -208,7 +275,9 @@ func (l *CYLoggerTemplateLayout2) GetFormatMessage(strChannel string, eMsgType C
 	nYY, nMM, nDD, nHR, nMN, nSC, nMMN int,
 	bEscape bool) string {
 
-	var sb strings.Builder
+	sb := builderPool.Get().(*strings.Builder)
+	sb.Reset()
+	sb.Grow(256)
 	hs := Common.LogHeaderStart
 	he := Common.LogHeaderEnd
 	fv := Common.LogFieldValueEnd
@@ -217,7 +286,7 @@ func (l *CYLoggerTemplateLayout2) GetFormatMessage(strChannel string, eMsgType C
 
 	// [Time]
 	sb.WriteRune(hs)
-	sb.WriteString(l.GetTimeStamps(nYY, nMM, nDD, nHR, nMN, nSC, nMMN))
+	appendTimestamp(sb, nYY, nMM, nDD, nHR, nMN, nSC, nMMN)
 	sb.WriteRune(he)
 
 	// [Type[:SeverCode]]
@@ -225,7 +294,7 @@ func (l *CYLoggerTemplateLayout2) GetFormatMessage(strChannel string, eMsgType C
 	if nSeverCode >= 0 {
 		sb.WriteString(layoutTypeCode(eMsgType))
 		sb.WriteRune(':')
-		sb.WriteString(strconv.Itoa(nSeverCode))
+		appendInt(sb, nSeverCode)
 	} else {
 		sb.WriteString(layoutTypeCode(eMsgType))
 	}
@@ -234,12 +303,12 @@ func (l *CYLoggerTemplateLayout2) GetFormatMessage(strChannel string, eMsgType C
 	// |P:pid
 	sb.WriteRune(fv)
 	sb.WriteString("P:")
-	sb.WriteString(strconv.FormatUint(nProcessId, 10))
+	appendUint(sb, nProcessId)
 
 	// |T:tid]
 	sb.WriteRune(fv)
 	sb.WriteString("T:")
-	sb.WriteString(strconv.FormatUint(nThreadId, 10))
+	appendUint(sb, nThreadId)
 	sb.WriteRune(he)
 
 	// [Key=Value#...] (extension field)
@@ -251,11 +320,11 @@ func (l *CYLoggerTemplateLayout2) GetFormatMessage(strChannel string, eMsgType C
 		}
 	}
 
-	// [func(line)] 
+	// [func(line)]
 	sb.WriteRune(hs)
 	sb.WriteString(strFunction)
 	sb.WriteRune('(')
-	sb.WriteString(strconv.Itoa(nLine))
+	appendInt(sb, nLine)
 	sb.WriteRune(')')
 	sb.WriteRune(he)
 	sb.WriteRune(' ')
@@ -269,7 +338,9 @@ func (l *CYLoggerTemplateLayout2) GetFormatMessage(strChannel string, eMsgType C
 
 	sb.WriteString(strMsg)
 	sb.WriteString("\n")
-	return sb.String()
+	out := sb.String()
+	builderPool.Put(sb)
+	return out
 }
 
 func (l *CYLoggerTemplateLayout2) typeName(e Core.ELogType) string {
@@ -302,7 +373,9 @@ func (l *CYLoggerTemplateLayout3) GetFormatMessage(strChannel string, eMsgType C
 	nYY, nMM, nDD, nHR, nMN, nSC, nMMN int,
 	bEscape bool) string {
 
-	var sb strings.Builder
+	sb := builderPool.Get().(*strings.Builder)
+	sb.Reset()
+	sb.Grow(256)
 	hs := Common.LogHeaderStart
 	he := Common.LogHeaderEnd
 	fv := Common.LogFieldValueEnd
@@ -311,6 +384,9 @@ func (l *CYLoggerTemplateLayout3) GetFormatMessage(strChannel string, eMsgType C
 
 	// [Time]
 	sb.WriteRune(hs)
+	// Buildin3 keeps the SHORT time format ("HH:MM:SS", no date, no ms) — its
+	// GetTimeStamps is deliberately different from the full-date layouts 1/2/4,
+	// so it must use the layout's own formatter rather than appendTimestamp.
 	sb.WriteString(l.GetTimeStamps(nYY, nMM, nDD, nHR, nMN, nSC, nMMN))
 	sb.WriteRune(he)
 
@@ -319,7 +395,7 @@ func (l *CYLoggerTemplateLayout3) GetFormatMessage(strChannel string, eMsgType C
 	if nSeverCode >= 0 {
 		sb.WriteString(layoutTypeCode(eMsgType))
 		sb.WriteRune(':')
-		sb.WriteString(strconv.Itoa(nSeverCode))
+		appendInt(sb, nSeverCode)
 	} else {
 		sb.WriteString(layoutTypeCode(eMsgType))
 	}
@@ -327,12 +403,12 @@ func (l *CYLoggerTemplateLayout3) GetFormatMessage(strChannel string, eMsgType C
 	// |P:pid
 	sb.WriteRune(fv)
 	sb.WriteString("P:")
-	sb.WriteString(strconv.FormatUint(nProcessId, 10))
+	appendUint(sb, nProcessId)
 
 	// |T:tid
 	sb.WriteRune(fv)
 	sb.WriteString("T:")
-	sb.WriteString(strconv.FormatUint(nThreadId, 10))
+	appendUint(sb, nThreadId)
 
 	// |Key=Value#... (extension field)
 	if bEscape && l.escape != nil {
@@ -346,7 +422,7 @@ func (l *CYLoggerTemplateLayout3) GetFormatMessage(strChannel string, eMsgType C
 	sb.WriteRune(fv)
 	sb.WriteString(strFunction)
 	sb.WriteRune('(')
-	sb.WriteString(strconv.Itoa(nLine))
+	appendInt(sb, nLine)
 	sb.WriteRune(')')
 	sb.WriteRune(he)
 
@@ -360,7 +436,7 @@ func (l *CYLoggerTemplateLayout3) GetFormatMessage(strChannel string, eMsgType C
 	if nSeverCode >= 0 {
 		sb.WriteRune(hs)
 		sb.WriteString("ServerCode:")
-		sb.WriteString(strconv.Itoa(nSeverCode))
+		appendInt(sb, nSeverCode)
 		sb.WriteRune(he)
 	}
 
@@ -371,12 +447,14 @@ func (l *CYLoggerTemplateLayout3) GetFormatMessage(strChannel string, eMsgType C
 	sb.WriteRune(hs)
 	sb.WriteString(layoutBaseName(strFile))
 	sb.WriteRune('(')
-	sb.WriteString(strconv.Itoa(nLine))
+	appendInt(sb, nLine)
 	sb.WriteRune(')')
 	sb.WriteRune(he)
 
 	sb.WriteString("\n")
-	return sb.String()
+	out := sb.String()
+	builderPool.Put(sb)
+	return out
 }
 
 func (l *CYLoggerTemplateLayout3) typeName(e Core.ELogType) string {
@@ -413,7 +491,9 @@ func (l *CYLoggerTemplateLayout4) GetFormatMessage(strChannel string, eMsgType C
 	nYY, nMM, nDD, nHR, nMN, nSC, nMMN int,
 	bEscape bool) string {
 
-	var sb strings.Builder
+	sb := builderPool.Get().(*strings.Builder)
+	sb.Reset()
+	sb.Grow(256)
 	hs := Common.LogHeaderStart
 	he := Common.LogHeaderEnd
 	fv := Common.LogFieldValueEnd
@@ -422,7 +502,7 @@ func (l *CYLoggerTemplateLayout4) GetFormatMessage(strChannel string, eMsgType C
 
 	// [Time]
 	sb.WriteRune(hs)
-	sb.WriteString(l.GetTimeStamps(nYY, nMM, nDD, nHR, nMN, nSC, nMMN))
+	appendTimestamp(sb, nYY, nMM, nDD, nHR, nMN, nSC, nMMN)
 	sb.WriteRune(he)
 
 	// [Type[:SeverCode]|P:pid|T:tid]
@@ -430,14 +510,14 @@ func (l *CYLoggerTemplateLayout4) GetFormatMessage(strChannel string, eMsgType C
 	sb.WriteString(layoutTypeCode(eMsgType))
 	if nSeverCode >= 0 {
 		sb.WriteRune(':')
-		sb.WriteString(strconv.Itoa(nSeverCode))
+		appendInt(sb, nSeverCode)
 	}
 	sb.WriteRune(fv)
 	sb.WriteString("P:")
-	sb.WriteString(strconv.FormatUint(nProcessId, 10))
+	appendUint(sb, nProcessId)
 	sb.WriteRune(fv)
 	sb.WriteString("T:")
-	sb.WriteString(strconv.FormatUint(nThreadId, 10))
+	appendUint(sb, nThreadId)
 	sb.WriteRune(he)
 
 	// [Key=Value#...] (extension field)
@@ -460,14 +540,16 @@ func (l *CYLoggerTemplateLayout4) GetFormatMessage(strChannel string, eMsgType C
 	sb.WriteRune(hs)
 	sb.WriteString(strFunction)
 	sb.WriteRune('(')
-	sb.WriteString(strconv.Itoa(nLine))
+	appendInt(sb, nLine)
 	sb.WriteRune(')')
 	sb.WriteRune(he)
 	sb.WriteRune(' ')
 
 	sb.WriteString(strMsg)
 	sb.WriteString("\n")
-	return sb.String()
+	out := sb.String()
+	builderPool.Put(sb)
+	return out
 }
 
 func (l *CYLoggerTemplateLayout4) typeName(e Core.ELogType) string {

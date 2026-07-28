@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.7] - 2026-07-28
+
+### Performance
+
+- **Layout formatter zero-allocation rewrite (P1).** Every `GetFormatMessage` call previously allocated a `fmt.Sprintf` timestamp plus grew a fresh `strings.Builder` plus one `strconv.Itoa`/`FormatUint` string per field — ~21 allocs/op on the write path (GC pressure capped concurrent throughput). Now the built-in layouts 1/2/4 reuse a pooled `strings.Builder` (`builderPool`) and format the timestamp and all integer fields via `strconv.AppendInt`/`AppendUint` over stack scratch buffers (`appendTimestamp`/`appendInt`/`appendUint`/`appendPadded`), so the only steady-state heap allocations are the user message and the final `sb.String()` copy (~3–5 allocs/op). Measured (`go test -bench`, 200K iters): `WriteLogFmt` single-goroutine 9589 ns/op (allocs 21→5); fast mode (`WithThreadId(false)`, `MountMain(false)`) single-goroutine **366K → 491K lines/sec (+34%)**, 16 goroutines ~1.37M lines/sec. Buildin3 keeps its distinct SHORT `"HH:MM:SS"` timestamp (its own `GetTimeStamps`), so only layouts 1/2/4 use the full-date fast path.
+
+### Fixed
+
+- **Layout regression: Buildin3 timestamp format.** The first zero-alloc rewrite mistakenly forced the full `"YYYY-MM-DD HH:MM:SS.mmm"` timestamp onto every layout, erasing Buildin3's deliberately short `"HH:MM:SS"` format. This broke `examples/config_verify -opt=layout` and `examples/stress_test` `layout` (exact-format assertions) while `robustness_verify` `layout` still passed (it only checks marker/level-code/distinctness). Restored Buildin3 to its own `GetTimeStamps` formatter; the four layouts remain pairwise distinct and well-formed. Caught and fixed before release (all 23 `Build/verify.sh` stages now PASS).
+
 ## [0.3.6] - 2026-07-28
 
 ### Performance

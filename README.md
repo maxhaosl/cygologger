@@ -343,25 +343,59 @@ gologger.GetInstance().AddAppender(
 
 ## Performance & Durability
 
-File appenders (`CYLoggerFileAppender` / `CYLoggerMainAppender`) are **synchronous**
-writes bypassing the async channel for reliability, and were tuned for high throughput:
+File appenders (`CYLoggerFileAppender` / `CYLoggerMainAppender`) use an **async
+batched write pipeline** (v0.3.6+): the producer formats the line on its own goroutine
+(layout rendering runs fully in parallel) and appends the immutable string to a
+double-buffered batch under a sub-microsecond mutex; a single per-file writer goroutine
+swaps the batch out on a wakeup token and writes it through a 64 KB `bufio` writer under
+one lock acquisition. Bounded-batch **backpressure** guarantees **zero message loss**,
+and per-file ordering is preserved by the single-writer design.
 
-- **64 KB `bufio` write buffer + 1 s periodic flush** — lines are batched into a
-  buffered write instead of one `write(2)` syscall per line. The buffer is flushed
-  periodically (1 s), on rotation, on `Flush()`, and on `UnInit`, so a hard crash
-  can lose at most ~1 s of buffered lines. `Flush()` / `Close()` make all previously
-  written lines visible on disk before returning.
+- **64 KB `bufio` write buffer + 1 s periodic flush** — lines are batched instead of one
+  `write(2)` syscall per line. The buffer is flushed periodically (1 s), on rotation,
+  on `Flush()`, and on `UnInit`, so a hard crash can lose at most ~1 s of buffered lines.
+  `Flush()` performs a **blocking handshake** with the writer (drain + bufio flush) so
+  "write → Flush → read the file" remains reliable; when the writer goroutine is not
+  running (stand-alone appender use), `Flush` drains on the caller's goroutine so it can
+  never deadlock.
 - **In-memory size counter** — size-based rotation uses a byte counter kept in memory
   (seeded on open, incremented per write *including* buffered bytes) instead of an
   `os.Stat` per line, keeping the per-write hot path syscall-free.
-- **Throughput**: single-goroutine file writes run at ~100 K lines/sec; the library
-  stays race-clean under `go test -race` and passes 200 K-line integrity,
-  size-rotation, count-limit cleanup, and extreme concurrent (≤2048 goroutine) stress
-  tests with zero loss.
+- **`WithThreadId(bool)` option** (default `true`). Recording the goroutine ID (the `T:`
+  field) requires `runtime.Stack`, whose internal runtime lock serialises **all**
+  concurrent logging goroutines. CPU profiles showed **>90%** of logging CPU inside
+  `runtime.Stack` at 8+ goroutines — the dominant scalability bottleneck (not the file
+  lock). `WithThreadId(false)` skips the call (the `T:` field renders `0`), matching
+  industry practice (zap/zerolog do not record goroutine IDs by default). The switch is
+  cached in an atomic so the hot path never touches the config lock.
+
+### Measured throughput
+
+Measured on Apple Silicon with a ~48-byte payload, async batched writer, zero loss in
+every run (see `examples/robustness_verify` and `examples/stress_test`):
+
+| Workers | async, `WithThreadId(true)` (default) | async, `WithThreadId(false)` + `MountMain(false)` |
+|---|---|---|
+| 1 | 91,202/s | 375,607/s |
+| 4 | 81,406/s | 921,082/s |
+| 8 | 71,827/s | 1,188,530/s |
+| 16 | 69,166/s | 1,294,117/s |
+| 32 | 63,312/s | **1,276,627/s (~20× the default)** |
+
+With the async writer in place, `runtime.Stack` was the sole remaining serialisation
+point; disabling it unlocks near-linear scaling up to the disk/formatting limit
+(~1.29 M lines/sec aggregate). The default configuration stays intentionally conservative
+(`WithThreadId(true)`, `MountMain(true)`) because it preserves the goroutine-ID field and
+the `Main` aggregate file at the cost of throughput.
+
+The library stays race-clean under `go test -race` and passes 200 K-line integrity,
+size-rotation, count-limit cleanup, and extreme concurrent (≤2048 goroutine) stress tests
+with zero loss.
 
 > **Design note**: a single log file requires a single ordered writer, so under heavy
 > concurrency the aggregate rate approximates the single-writer rate. To scale further,
-> disable the Main double-write (`WithMain(false)`) or shard logs across channels/files.
+> disable the Main double-write (`WithMountMain(false)`) and/or the goroutine-ID field
+> (`WithThreadId(false)`), or shard logs across channels/files.
 
 ## Statistics
 

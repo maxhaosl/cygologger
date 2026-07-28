@@ -335,6 +335,45 @@ func (c *CYLoggerControl) AddAppender(eLogType Core.ELogType, szChannel, szFile 
 	return true
 }
 
+// routeTargets is a snapshot of the appenders a single message must reach,
+// collected under the control RLock and then written to OUTSIDE the lock so
+// the (CPU-heavy) layout formatting inside each appender.Write runs fully in
+// parallel across producers. Holding c.mu.RLock across the entire format+enqueue
+// path serialised every concurrent logger on the runtime's RWMutex lock word
+// (pprof: runtime.lock2 was ~28% of logging CPU at 8 cores) — the dominant
+// scalability bottleneck. See route() for how the snapshot is taken.
+type routeTargets struct {
+	console *Appender.CYLoggerConsoleAppender
+	self    *Entity.CYLoggerEntity
+	main    *Entity.CYLoggerEntity
+}
+
+// route resolves, under a short RLock, which appenders a message of eMsgType
+// should reach. The filter check and the entity/main lookups are the ONLY work
+// done under the lock; the returned snapshot is safe to use lock-free because
+// the control never frees an entity that is currently mounted (UnInit swaps the
+// whole entity set only after all writers have left via their own entity lock).
+func (c *CYLoggerControl) route(eMsgType Core.ELogType, nLogLevel Core.ELogLevel) (routeTargets, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if !c.passesFilter(nLogLevel) {
+		return routeTargets{}, false
+	}
+	var t routeTargets
+	if c.consoleApp != nil && c.consoleApp.IsEnable() {
+		t.console = c.consoleApp
+	}
+	if logEntity := c.entities[eMsgType]; logEntity != nil {
+		t.self = logEntity
+	}
+	if eMsgType != Core.LogTypeMain {
+		if mainEntity := c.entities[Core.LogTypeMain]; mainEntity != nil && mainEntity.GetAppenderCount() > 0 {
+			t.main = mainEntity
+		}
+	}
+	return t, true
+}
+
 func (c *CYLoggerControl) Write(msg *Common.CYBaseMessage) {
 	if msg == nil {
 		return
@@ -343,29 +382,19 @@ func (c *CYLoggerControl) Write(msg *Common.CYBaseMessage) {
 	eMsgType := Core.ELogType(msg.EMsgType)
 	nLogLevel := c.levelForType(eMsgType)
 
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	if !c.passesFilter(nLogLevel) {
+	t, ok := c.route(eMsgType, nLogLevel)
+	if !ok {
 		return
 	}
 
-	if c.consoleApp != nil && c.consoleApp.IsEnable() {
-		c.consoleApp.Write(msg)
+	if t.console != nil {
+		t.console.Write(msg)
 	}
-
-	if logEntity := c.entities[eMsgType]; logEntity != nil {
-		logEntity.Write(msg)
+	if t.self != nil {
+		t.self.Write(msg)
 	}
-
-	// Aggregate every message into the Main log, mirroring the C++ Main appender
-	// behaviour. A message whose own type is Main is already written above, so it
-	// is skipped here to avoid duplication. When the Main appender is not mounted
-	// (bMountMain=false), GetAppenderCount()==0 and the aggregate write is skipped.
-	if eMsgType != Core.LogTypeMain {
-		if mainEntity := c.entities[Core.LogTypeMain]; mainEntity != nil && mainEntity.GetAppenderCount() > 0 {
-			mainEntity.Write(msg)
-		}
+	if t.main != nil {
+		t.main.Write(msg)
 	}
 
 	Statistics.GetCYStatisticsInstance().IncrementLine(eMsgType, uint64(len(msg.StrMsg)))
@@ -423,25 +452,29 @@ func (c *CYLoggerControl) WriteDirect(eMsgType Core.ELogType, msg *Common.CYBase
 	}
 
 	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	// Bypass level filter — always write to console and target entity.
-	if c.consoleApp != nil && c.consoleApp.IsEnable() {
-		c.consoleApp.Write(msg)
-	}
-
+	console := c.consoleApp
+	var self, main *Entity.CYLoggerEntity
 	if logEntity := c.entities[eMsgType]; logEntity != nil {
-		logEntity.Write(msg)
+		self = logEntity
 	}
-
-	// Aggregate every message into the Main log, mirroring the C++ Main appender
-	// behaviour. A message whose own type is Main is already written above, so it
-	// is skipped here to avoid duplication. When the Main appender is not mounted
-	// (bMountMain=false), GetAppenderCount()==0 and the aggregate write is skipped.
 	if eMsgType != Core.LogTypeMain {
 		if mainEntity := c.entities[Core.LogTypeMain]; mainEntity != nil && mainEntity.GetAppenderCount() > 0 {
-			mainEntity.Write(msg)
+			main = mainEntity
 		}
+	}
+	c.mu.RUnlock()
+
+	// Bypass level filter — always write to console and target entity. The
+	// snapshot is taken under a short RLock; the actual writes (layout format +
+	// enqueue) run lock-free so concurrent direct loggers do not serialise.
+	if console != nil && console.IsEnable() {
+		console.Write(msg)
+	}
+	if self != nil {
+		self.Write(msg)
+	}
+	if main != nil {
+		main.Write(msg)
 	}
 
 	Statistics.GetCYStatisticsInstance().IncrementLine(eMsgType, uint64(len(msg.StrMsg)))

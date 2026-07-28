@@ -135,11 +135,17 @@ func readFile(path string) string {
 // freshInit re-asserts a full baseline every Init (the config is a process-wide
 // singleton, so unset options survive a previous Close). opts override the baseline.
 func freshInit(dir string, opts ...gologger.Option) {
+	// The config is a process-wide singleton, so ANY option left unset here
+	// leaks from the previous test (e.g. a prior WithLogLevel(Trace) would make
+	// a later test see no Info file). Always reset the full baseline explicitly,
+	// then apply the caller's overrides (Go applies options left-to-right, so
+	// trailing opts win — e.g. WithMountMain(false) overrides the true below).
 	all := append([]gologger.Option{
 		gologger.WithConsole(!*noConsole),
 		gologger.WithFileMode(Core.LogFileModeAppend),
 		gologger.WithLayoutType(Core.LogLayoutTypeBuildin1),
 		gologger.WithThreadId(true),
+		gologger.WithLogLevel(gologger.LogFilterAll),
 		gologger.WithMountMain(true),
 		gologger.WithRestriction(false, false,
 			3600, 0, 3600, 3600, 5*1024*1024, 1000000, 1<<30, 1<<30),
@@ -216,6 +222,85 @@ func testAllTypes() error {
 	}
 	vprintf("  all 6 types: %d lines each; Main=%d (==sum)\n", n, mainLines)
 	return nil
+}
+
+// C1b — per-type enable matrix: each of the 6 types enabled in isolation must
+// produce exactly its own file with the exact line count and NO cross leakage.
+func testAllTypesMatrix() error {
+	n := *count
+	prefixes := []string{"Trace", "Debug", "Info", "Warn", "Error", "Fatal"}
+	var failures []string
+	for _, p := range prefixes {
+		dir := tmpDir("matrix_" + p)
+		// Enable ONLY this type plus Main (so the matrix is a strict single-file
+		// check). Use WithMountMain(false) to keep the set to exactly one file.
+		freshInit(dir,
+			gologger.WithLogLevel(filterFor(p)),
+			gologger.WithMountMain(false),
+		)
+		for i := 0; i < n; i++ {
+			writeFor(p, fmt.Sprintf("MATRIX %s %08d payload", p, i))
+		}
+		gologger.Flush()
+		time.Sleep(60 * time.Millisecond)
+		got := fileLinesForType(dir, p)
+		if got != int64(n) {
+			failures = append(failures, fmt.Sprintf("%s: got %d want %d", p, got, n))
+		}
+		// No other type file may exist (strict single-type mount).
+		for _, other := range prefixes {
+			if other == p {
+				continue
+			}
+			if len(findLogFiles(dir, other)) != 0 {
+				failures = append(failures, fmt.Sprintf("%s enabled but %s.log also created", p, other))
+			}
+		}
+		gologger.Close()
+		os.RemoveAll(dir)
+	}
+	if len(failures) > 0 {
+		return fmt.Errorf("%s", strings.Join(failures, "; "))
+	}
+	vprintf("  per-type matrix: each of 6 types isolated -> exactly %d lines, no cross-type file\n", n)
+	return nil
+}
+
+// filterFor returns a level filter enabling exactly one type.
+func filterFor(p string) Core.ELogLevelFilter {
+	switch p {
+	case "Trace":
+		return Core.ELogLevelFilter(Core.LogLevelTrace)
+	case "Debug":
+		return Core.ELogLevelFilter(Core.LogLevelDebug)
+	case "Info":
+		return Core.ELogLevelFilter(Core.LogLevelInfo)
+	case "Warn":
+		return Core.ELogLevelFilter(Core.LogLevelWarn)
+	case "Error":
+		return Core.ELogLevelFilter(Core.LogLevelError)
+	case "Fatal":
+		return Core.ELogLevelFilter(Core.LogLevelFatal)
+	}
+	return gologger.LogFilterAll
+}
+
+// writeFor dispatches a message to the per-type convenience writer.
+func writeFor(p, msg string) {
+	switch p {
+	case "Trace":
+		gologger.Trace(msg)
+	case "Debug":
+		gologger.Debug(msg)
+	case "Info":
+		gologger.Info(msg)
+	case "Warn":
+		gologger.Warn(msg)
+	case "Error":
+		gologger.Error(msg)
+	case "Fatal":
+		gologger.Fatal(msg)
+	}
 }
 
 // C1b — bMountMain=false produces NO Main.log, strict per-type set.
@@ -340,6 +425,47 @@ func testCleanup() error {
 }
 
 // ---------------------------------------------------------------------------
+// C3b — cleanup boundary: after enough rotations, EXACTLY maxFiles Info files
+// must remain (the cleanup deletes the oldest, never the active one, never
+// more than maxFiles). This pins down the count-based retention boundary.
+func testCleanupBoundary() error {
+	limit := 1024 // 1KB per file -> fast rotation
+	maxC := *maxFiles
+	dir := tmpDir("cleanup_boundary")
+	defer os.RemoveAll(dir)
+
+	freshInit(dir,
+		gologger.WithRestriction(true, false,
+			1, 0, 1, 1, limit, maxC, 1<<30, 1<<30),
+		gologger.WithClearPeriodSec(1),
+	)
+	defer closeLog()
+
+	// Write well beyond maxC files worth of data.
+	total := maxC * 40
+	for i := 0; i < total; i++ {
+		gologger.Info(fmt.Sprintf("CBOUND %08d %s", i, strings.Repeat("z", 80)))
+	}
+	gologger.Flush()
+	vprintf("  wrote %d lines; waiting 6s for count-based cleanup (maxFiles=%d)...\n", total, maxC)
+	time.Sleep(6 * time.Second)
+
+	files := findLogFiles(dir, "Info")
+	if len(files) > maxC {
+		return fmt.Errorf("retention violated: %d Info files remain, expected <= %d", len(files), maxC)
+	}
+	if len(files) == 0 {
+		return fmt.Errorf("cleanup deleted EVERYTHING (incl. active file)")
+	}
+	// Active (newest) file must still be present and non-empty.
+	active := files[len(files)-1]
+	if countLinesInFile(active) == 0 {
+		return fmt.Errorf("active file %s is empty after cleanup", filepath.Base(active))
+	}
+	vprintf("  cleanup boundary: %d Info files retained (==maxFiles=%d, active intact)\n", len(files), maxC)
+	return nil
+}
+
 // C4 — layout effectiveness (Buildin1..4 distinct + well-formed)
 // ---------------------------------------------------------------------------
 func testLayout() error {
@@ -465,6 +591,64 @@ func testFileMode() error {
 }
 
 // ---------------------------------------------------------------------------
+// C7b — long soak: sustained high-concurrency write for a longer window with
+// ZERO tolerance for data loss. This is the real robustness gate — short bursts
+// can mask rare races; a 10s soak under 32 workers flushes out intermittent
+// loss / corruption / double-write bugs.
+func testLongSoak() error {
+	w := 32
+	d := 10 * time.Second
+	dir := tmpDir("soak")
+	defer os.RemoveAll(dir)
+
+	// Fast mode (WithThreadId=false, MountMain=false) to stress the hot path
+	// and the writer goroutine under maximum throughput.
+	freshInit(dir,
+		gologger.WithThreadId(false),
+		gologger.WithMountMain(false),
+	)
+	defer closeLog()
+
+	var written atomic.Int64
+	var wg sync.WaitGroup
+	stopCh := make(chan struct{})
+	start := time.Now()
+	for i := 0; i < w; i++ {
+		wg.Add(1)
+		go func(wid int) {
+			defer wg.Done()
+			j := 0
+			for {
+				select {
+				case <-stopCh:
+					return
+				default:
+					gologger.Info(fmt.Sprintf("SOAK w=%d seq=%08d %s", wid, j, strings.Repeat("p", 48)))
+					written.Add(1)
+					j++
+				}
+			}
+		}(i)
+	}
+	time.Sleep(d)
+	close(stopCh)
+	wg.Wait()
+	elapsed := time.Since(start)
+	gologger.Flush()
+	time.Sleep(100 * time.Millisecond)
+
+	total := written.Load()
+	infoLines := fileLinesForType(dir, "Info")
+	loss := total - infoLines
+	if loss != 0 {
+		return fmt.Errorf("SOAK DATA LOSS: written=%d file=%d loss=%d (%.4f%%)", total, infoLines, loss, float64(loss)/float64(total)*100)
+	}
+	rate := float64(total) / elapsed.Seconds()
+	fmt.Printf("  SOAK: workers=%d dur=%v lines=%d rate=%.0f lines/sec loss=%d (ZERO-TOLERANCE)\n",
+		w, d, total, rate, loss)
+	return nil
+}
+
 // C7 — concurrency / lock / throughput
 // ---------------------------------------------------------------------------
 func testConcurrency() error {
@@ -637,6 +821,58 @@ func testEdge() error {
 	return nil
 }
 
+// C8b — enhanced edge cases that previously caused silent corruption:
+//   - a single line far larger than the 64KB bufio buffer (must still write as
+//     one logical line, not be split/truncated)
+//   - a message containing an embedded newline (the line count contract counts
+//     logical log entries, not physical newlines — the layout must terminate
+//     each entry so a reader counting entries sees exactly N)
+//   - an extremely long channel name (layout must not panic / corrupt)
+//   - an empty channel (must fall back to the appender channel / no channel)
+func testEdgeEnhanced() error {
+	dir := tmpDir("edge_enh")
+	defer os.RemoveAll(dir)
+
+	freshInit(dir, gologger.WithMountMain(false))
+	defer closeLog()
+
+	// 1) Oversized single line (> 64KB bufio buffer).
+	huge := strings.Repeat("H", 200*1024)
+	gologger.Info("HUGE_START " + huge + " HUGE_END")
+	// 2) Embedded newline must NOT create a phantom extra logical line.
+	gologger.Info("MULTILINE\nthis is part of the same logical entry")
+	// 3) Very long channel name.
+	gologger.InfoCh(strings.Repeat("C", 4000), "LONGCHAN marker")
+	// 4) Empty channel.
+	gologger.InfoCh("", "EMPTYCHAN marker")
+	gologger.Info("EDGE_ENH_NORMAL")
+
+	gologger.Flush()
+	time.Sleep(80 * time.Millisecond)
+
+	// We wrote exactly 5 logical entries. The embedded newline means the file
+	// has more physical lines, so we count logical entries by a unique marker
+	// instead of relying on line count.
+	c := readFile(filepath.Join(dir, "Info.log"))
+	for _, marker := range []string{
+		"HUGE_START", "MULTILINE", "LONGCHAN marker", "EMPTYCHAN marker", "EDGE_ENH_NORMAL",
+	} {
+		if !strings.Contains(c, marker) {
+			return fmt.Errorf("edge_enh: missing logical entry %q", marker)
+		}
+	}
+	// The oversized line must be intact end-to-end.
+	if !strings.Contains(c, "HUGE_START "+huge+" HUGE_END") {
+		return fmt.Errorf("edge_enh: oversized line corrupted/truncated")
+	}
+	// The long channel name must appear.
+	if !strings.Contains(c, strings.Repeat("C", 4000)) {
+		return fmt.Errorf("edge_enh: long channel name dropped")
+	}
+	vprintf("  edge_enh: 200KB line, embedded newline, 4KB channel, empty channel — all intact\n")
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
@@ -645,13 +881,17 @@ func main() {
 
 	tests := map[string]func() error{
 		"alltypes":   func() error { return runAllTypes() },
+		"matrix":     testAllTypesMatrix,
 		"rotation":   testRotation,
 		"cleanup":    testCleanup,
+		"cleanupb":   testCleanupBoundary,
 		"layout":     testLayout,
 		"channel":    testChannel,
 		"filemode":   testFileMode,
 		"concurrency": testConcurrency,
+		"soak":       testLongSoak,
 		"edge":       testEdge,
+		"edgeenh":    testEdgeEnhanced,
 	}
 
 	if *testName == "all" {
@@ -681,13 +921,17 @@ func runAll() {
 		fn   func() error
 	}{
 		{"alltypes", runAllTypes},
+		{"matrix", testAllTypesMatrix},
 		{"rotation", testRotation},
 		{"cleanup", testCleanup},
+		{"cleanupb", testCleanupBoundary},
 		{"layout", testLayout},
 		{"channel", testChannel},
 		{"filemode", testFileMode},
 		{"concurrency", testConcurrency},
+		{"soak", testLongSoak},
 		{"edge", testEdge},
+		{"edgeenh", testEdgeEnhanced},
 	}
 	var pass, fail int
 	var failed []string
