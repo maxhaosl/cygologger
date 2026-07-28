@@ -50,7 +50,7 @@ type CYLoggerConfig struct {
 	eFileMode       ELogFileMode
 	eLayoutType     ELogLayoutType
 	eLogLevelFilter ELogLevelFilter
-	eMode           EMode
+	bMountMain      bool // 是否挂载 Main 聚合文件（默认 true，向后兼容旧行为）
 
 	// szRemoteAddr is the remote log server address (host:port). It mirrors the
 	// C++ CY_LOG_APPENDER remote endpoint (default 127.0.0.1:7000).
@@ -91,7 +91,7 @@ func GetCYLoggerConfigInstance() *CYLoggerConfig {
 			eFileMode:       DefaultLogFileMode,
 			eLayoutType:     DefaultLogLayoutType,
 			eLogLevelFilter: DefaultLogLevelFilter,
-			eMode:           ModeAll,
+			bMountMain:      LOG_MOUNT_MAIN,
 
 			szRemoteAddr:          "127.0.0.1:7000",
 			eRemoteProto:          RemoteProtoTCP,
@@ -236,22 +236,23 @@ func (c *CYLoggerConfig) GetLogLevelFilter() ELogLevelFilter {
 	return c.eLogLevelFilter
 }
 
-// SetMode sets the logger mode (Debug/Release switch). It controls which
-// log-type file appenders are mounted and the effective level filter:
-//   ModeDebug   -> Trace/Info/Warn/Error files, all four levels recorded
-//   ModeRelease -> Warn/Error files only; Trace/Info never created or recorded
-//   ModeAll     -> all built-in file types (Trace/Debug/Info/Warn/Error/Fatal/Main)
-func (c *CYLoggerConfig) SetMode(eMode EMode) {
+// SetMountMain enables or disables the Main aggregate file appender. When
+// enabled (the default), Init mounts a Main.log that aggregates every enabled
+// log type. When disabled, only the per-level files are created, so callers
+// can keep a strict per-level file set (e.g. Trace/Info/Warn/Error without a
+// Main.log). The Main entity still exists in the control map, so aggregated
+// writes become no-ops and no Main file is produced.
+func (c *CYLoggerConfig) SetMountMain(b bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.eMode = eMode
+	c.bMountMain = b
 }
 
-// GetMode returns the logger mode.
-func (c *CYLoggerConfig) GetMode() EMode {
+// IsMountMain returns whether the Main aggregate file appender is mounted.
+func (c *CYLoggerConfig) IsMountMain() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.eMode
+	return c.bMountMain
 }
 
 // =============================================================================

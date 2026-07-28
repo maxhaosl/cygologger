@@ -303,14 +303,12 @@ func WithLogLevel(f Core.ELogLevelFilter) Option {
 	return func(c *Core.CYLoggerConfig) { c.SetLogLevelFilter(f) }
 }
 
-// WithMode sets the logger mode, controlling which log-type file appenders are
-// mounted and the effective level filter. It implements the retrieval project's
-// Debug/Release switch:
-//   gologger.WithMode(gologger.ModeRelease) // only Warn/Error files; Trace/Info never created or recorded
-//   gologger.WithMode(gologger.ModeDebug)   // Trace/Info/Warn/Error files (4 types)
-//   gologger.WithMode(gologger.ModeAll)     // all built-in file types (backward compatible)
-func WithMode(m Core.EMode) Option {
-	return func(c *Core.CYLoggerConfig) { c.SetMode(m) }
+// WithMountMain enables or disables the Main aggregate file appender (default:
+// true). When false, Init mounts only the per-level files and no Main.log is
+// produced, so callers get a strict per-level file set (e.g. the retrieval
+// project's Debug = Trace/Info/Warn/Error, Release = Error only).
+func WithMountMain(b bool) Option {
+	return func(c *Core.CYLoggerConfig) { c.SetMountMain(b) }
 }
 
 // WithRemoteAddr sets the remote log server address (host:port).

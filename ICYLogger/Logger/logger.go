@@ -114,44 +114,62 @@ func (c *CYLoggerControl) Init(szLogPath string, bShowConsole, bWriteRemote, bWr
 	c.mu.Unlock()
 
 	// Auto-mount per-type file appenders, mirroring the C++ CY_LOG_APPENDER macro.
-	// The exact set of mounted types is driven by the configured EMode so the
-	// retrieval project can switch between Debug (Trace/Info/Warn/Error, 4 files)
-	// and Release (Warn/Error only, 2 files; Trace/Info never created/recorded).
-	// ModeAll preserves the original behaviour (Trace/Debug/Info/Warn/Error/Fatal/Main).
+	// The exact set of mounted types is driven by the configured level filter
+	// (LOG_LEVEL_FILTER): each enabled level bit produces its own file. This is
+	// the single source of truth for both which messages are written AND which
+	// files are created, so callers select their file set purely via WithLogLevel.
 	//
 	// IMPORTANT: AddAppender locks c.mu itself, so we must NOT hold c.mu here —
 	// holding it across the call would deadlock (sync.RWMutex is not reentrant).
 	// c.SetLogLevel also locks c.mu, so it is called here (outside the loop),
 	// never inside a c.mu-held section.
-	mode := cfg.GetMode()
+	c.SetLogLevel(cfg.GetLogLevelFilter())
+	filter := c.GetLogLevel()
+	// Mount one file appender per log type whose level bit is enabled by the
+	// active filter. Because typeEnabledByFilter maps each type to its level bit,
+	// LOG_LEVEL_FILTER alone decides which files exist — e.g. a filter of
+	// LogLevelError creates only Error.log; Trace|Info|Warn|Error creates the
+	// four debug files; an arbitrary subset creates exactly that subset.
 	var fileTypes []Core.ELogType
-	switch mode {
-	case Core.ModeRelease, Core.ModeProd:
-		// 发布/生产：仅 Error 文件，且只记录 Error 级别；Warn/Trace/Info 不挂载、
-		// 不创建文件、不产生任何记录（满足“Release 只输出 Error”）。
-		c.SetLogLevel(Core.ELogLevelFilter(Core.LogLevelError))
-		fileTypes = []Core.ELogType{Core.LogTypeError}
-	case Core.ModeDebug:
-		c.SetLogLevel(Core.ELogLevelFilter(Core.LogLevelTrace | Core.LogLevelInfo | Core.LogLevelWarn | Core.LogLevelError))
-		fileTypes = []Core.ELogType{Core.LogTypeTrace, Core.LogTypeInfo, Core.LogTypeWarn, Core.LogTypeError}
-	default: // ModeAll — backward compatible
-		c.SetLogLevel(cfg.GetLogLevelFilter())
-		fileTypes = []Core.ELogType{
-			Core.LogTypeTrace, Core.LogTypeDebug, Core.LogTypeInfo,
-			Core.LogTypeWarn, Core.LogTypeError, Core.LogTypeFatal, Core.LogTypeMain,
+	for _, m := range []struct {
+		t   Core.ELogType
+		lvl Core.ELogLevel
+	}{
+		{Core.LogTypeTrace, Core.LogLevelTrace},
+		{Core.LogTypeInfo, Core.LogLevelInfo},
+		{Core.LogTypeWarn, Core.LogLevelWarn},
+		{Core.LogTypeError, Core.LogLevelError},
+		{Core.LogTypeDebug, Core.LogLevelDebug},
+		{Core.LogTypeFatal, Core.LogLevelFatal},
+	} {
+		if int(filter)&int(m.lvl) != 0 {
+			fileTypes = append(fileTypes, m.t)
 		}
 	}
+	// Main aggregates every enabled type. It is mounted only when the
+	// bMountMain switch is on AND at least one level is enabled. The default is
+	// on (backward compatible with the historical all-types behaviour); callers
+	// may turn it off (WithMountMain(false)) to keep a strict per-level file set
+	// without a Main.log.
+	if cfg.IsMountMain() && filter != 0 {
+		fileTypes = append(fileTypes, Core.LogTypeMain)
+	}
 	for _, t := range fileTypes {
-		// Honour LOG_LEVEL_FILTER at mount time: a filtered-out type must not
-		// generate its file. (Write() still re-checks the filter per message.)
-		if c.typeEnabledByFilter(t) && !c.hasAppender(t) {
+		if !c.hasAppender(t) {
 			c.AddAppender(t, "", "", eFileMode)
 		}
 	}
-	if bWriteSys && c.typeEnabledByFilter(Core.LogTypeSys) && !c.hasAppender(Core.LogTypeSys) {
+	// Sys/Remote are independent sinks controlled by their own switches
+	// (LOG_WRITE_SYS / LOG_WRITE_REMOTE), NOT by the per-level LOG_LEVEL_FILTER.
+	// Mounting them here is driven solely by the switch; whether any message
+	// actually reaches them is still decided per-write by passesFilter (their
+	// LogLevelSys / LogLevelRemote bits). Gating the mount by typeEnabledByFilter
+	// would be wrong: the default LogFilterAll does not include those bits, so a
+	// switch-on Sys/Remote would never create its file.
+	if bWriteSys && !c.hasAppender(Core.LogTypeSys) {
 		c.AddAppender(Core.LogTypeSys, "", "", eFileMode)
 	}
-	if bWriteRemote && c.typeEnabledByFilter(Core.LogTypeRemote) && !c.hasAppender(Core.LogTypeRemote) {
+	if bWriteRemote && !c.hasAppender(Core.LogTypeRemote) {
 		c.AddAppender(Core.LogTypeRemote, "", szRemoteAddr, eFileMode)
 	}
 
@@ -323,9 +341,10 @@ func (c *CYLoggerControl) Write(msg *Common.CYBaseMessage) {
 
 	// Aggregate every message into the Main log, mirroring the C++ Main appender
 	// behaviour. A message whose own type is Main is already written above, so it
-	// is skipped here to avoid duplication.
+	// is skipped here to avoid duplication. When the Main appender is not mounted
+	// (bMountMain=false), GetAppenderCount()==0 and the aggregate write is skipped.
 	if eMsgType != Core.LogTypeMain {
-		if mainEntity := c.entities[Core.LogTypeMain]; mainEntity != nil {
+		if mainEntity := c.entities[Core.LogTypeMain]; mainEntity != nil && mainEntity.GetAppenderCount() > 0 {
 			mainEntity.Write(msg)
 		}
 	}
@@ -367,8 +386,9 @@ func (c *CYLoggerControl) passesFilter(nLogLevel Core.ELogLevel) bool {
 // the filter neither receives output nor causes its dedicated file to be created,
 // mirroring the C++ LOG_LEVEL_FILTER semantics where a suppressed level is fully
 // turned off (no file, no writes). Main is the aggregate of every enabled type, so
-// it is always mounted while any logging can occur — it is gated only by the
-// explicit EMode switch, not by individual level bits.
+// for the purpose of this per-type gate it is always considered enabled; the
+// actual Main appender is mounted only when both the level filter is non-empty
+// AND the bMountMain switch is on (see Init).
 func (c *CYLoggerControl) typeEnabledByFilter(eMsgType Core.ELogType) bool {
 	if eMsgType == Core.LogTypeMain {
 		return true
@@ -397,9 +417,10 @@ func (c *CYLoggerControl) WriteDirect(eMsgType Core.ELogType, msg *Common.CYBase
 
 	// Aggregate every message into the Main log, mirroring the C++ Main appender
 	// behaviour. A message whose own type is Main is already written above, so it
-	// is skipped here to avoid duplication.
+	// is skipped here to avoid duplication. When the Main appender is not mounted
+	// (bMountMain=false), GetAppenderCount()==0 and the aggregate write is skipped.
 	if eMsgType != Core.LogTypeMain {
-		if mainEntity := c.entities[Core.LogTypeMain]; mainEntity != nil {
+		if mainEntity := c.entities[Core.LogTypeMain]; mainEntity != nil && mainEntity.GetAppenderCount() > 0 {
 			mainEntity.Write(msg)
 		}
 	}

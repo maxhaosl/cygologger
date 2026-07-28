@@ -5,14 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.5] - 2026-07-28
+
+### Changed
+
+- **Removed the `EMode` / `ModeAll` / `ModeDebug` / `ModeRelease` / `ModeProd` system.** The level filter (`LOG_LEVEL_FILTER`, `ELogLevelFilter`) is now the **single source of truth** for which per-level `.log` files are created: every enabled level bit produces its own file, and `Main` is mounted on top of that set. The previous `EMode` switch (Debug = Trace/Info/Warn/Error, Release = Error only) is superseded — equivalent strict sets are now obtained purely via `WithLogLevel`. Removed symbols: `Core.EMode`/`Core.Mode*` (`Core/types.go`), `CYLoggerConfig.SetMode`/`GetMode` + the `eMode` field (`Core/config.go`), `WithMode` (`api.go`), and the `icylogger.Mode*` / `icylogger.EMode` re-exports (`inc.go`).
+
+### Added
+
+- **`WithMountMain(bool)` switch** to control whether the `Main` aggregate file is mounted, restoring strict per-level file sets without a `Main.log`:
+  - `Core/config.go`: new `bMountMain` field (default `LOG_MOUNT_MAIN = true`, backward compatible), `SetMountMain`/`IsMountMain` accessors; singleton and `DefaultConfig` initialise it.
+  - `Core/defaults.go`: new default constant `LOG_MOUNT_MAIN = true`.
+  - `api.go`: new `WithMountMain(b bool)` option.
+  - `Logger/logger.go`: `Main` is mounted iff `cfg.IsMountMain() && filter != 0`; the `Main` aggregate write in `Write`/`WriteDirect` is guarded by `mainEntity.GetAppenderCount() > 0`, so when `Main` is not mounted it is a no-op and no `Main.log` is ever created. This recreates the historical strict sets — e.g. `WithMountMain(false)` + a `Trace|Info|Warn|Error` filter yields exactly 4 files (no `Main.log`); `+ LogLevelError` yields exactly 1 file (no `Main.log`) — while the default (`true`) keeps the original all-types behaviour.
+- **`examples/mount_main_test`**: standalone example (`go run .`, exits non-zero on failure) verifying the `WithMountMain` switch end-to-end:
+  - `mountMain=false` + strict Debug filter (Trace/Info/Warn/Error) → exactly 4 files, **no `Main.log`**;
+  - `mountMain=false` + strict Release filter (Error only) → exactly 1 file, **no `Main.log`**;
+  - `mountMain=false` + `LogFilterAll` → 6 level files, **no `Main.log`**;
+  - `mountMain=true` (default) + `LogFilterWarnsAndErrors` → 4 level files **plus** `Main.log` aggregating the enabled levels (regression guard that the default still mounts `Main`).
+  - Picked up automatically by `Build/verify.sh`, so it gates the one-click verification.
+
+### Fixed
+
+- **Sys/Remote appenders no longer gated by the level filter at mount time** (regression introduced in 0.3.4). They are now mounted solely by their `LOG_WRITE_SYS` / `LOG_WRITE_REMOTE` switches; per-message suppression still happens via `passesFilter` (`LogLevelSys` / `LogLevelRemote` bits). Previously the default `LogFilterAll` (which excludes `LogLevelSys`/`LogLevelRemote`) made `typeEnabledByFilter(Sys|Remote)` false, so a switch-on Sys/Remote never created its file. `examples/config_verify` `-opt=sys` / `-opt=remote` now pass.
+
 ## [0.3.4] - 2026-07-28
 
 ### Changed
 
 - **`LOG_LEVEL_FILTER` now also gates file creation**: a log level disabled by the effective `ELogLevelFilter` no longer generates its dedicated `.log` file at `Init()`. Previously the filter only suppressed *writes* (via `CYLoggerControl.passesFilter` in `Write`), but the per-type file appenders were still mounted — so filtered-out types produced empty files. Now `CYLoggerControl.typeEnabledByFilter` is consulted while mounting appenders in `Init()`, so a suppressed type produces neither output nor a file, fully mirroring the C++ `LOG_LEVEL_FILTER` "suppressed level is fully turned off" semantics.
-  - `Main` is the aggregate of every enabled type and is therefore still mounted whenever any logging can occur (gated only by `EMode`, not by individual level bits).
-  - `Sys`/`Remote` file appenders are likewise gated by the filter (in addition to the `LOG_WRITE_SYS`/`LOG_WRITE_REMOTE` switches).
-  - In `ModeRelease`/`ModeDebug` the mode's own filter is authoritative, so behaviour there is unchanged.
+  - `Main` is the aggregate of every enabled type and is therefore still mounted whenever any logging can occur (initially gated only by the filter being non-empty; from **0.3.5** it is *additionally* gated by the `WithMountMain` switch, default on for backward compatibility).
+  - `Sys`/`Remote` file appenders are controlled solely by their own `LOG_WRITE_SYS`/`LOG_WRITE_REMOTE` switches, **independent of the level filter** (the filter only suppresses their individual messages via `passesFilter`). *Note:* the original 0.3.4 draft wrongly stated they were gated by the level filter at mount time; that was corrected in **0.3.5** (the default `LogFilterAll` excludes the `LogLevelSys`/`LogLevelRemote` bits, so that gating would have prevented their files from ever being created).
+  - *The `EMode`/`ModeAll`/`ModeDebug`/`ModeRelease`/`ModeProd` switch described in the original 0.3.4 draft was removed in **0.3.5** — the level filter is now the single source of truth for which per-level files are created.*
 
 ### Added
 

@@ -72,7 +72,6 @@ type (
 	ELogLevelFilter  = Core.ELogLevelFilter
 	ELogFileMode     = Core.ELogFileMode
 	ELogLayoutType   = Core.ELogLayoutType
-	EMode            = Core.EMode
 	STStatistics     = Core.STStatistics
 	CYLoggerConfig   = Core.CYLoggerConfig
 )
@@ -103,11 +102,6 @@ const (
 
 	LogFileModeAppend = Core.LogFileModeAppend
 	LogFileModeTime   = Core.LogFileModeTime
-
-	ModeAll    = Core.ModeAll
-	ModeDebug  = Core.ModeDebug
-	ModeRelease = Core.ModeRelease
-	ModeProd   = Core.ModeProd
 
 	LogLayoutTypeCustom   = Core.LogLayoutTypeCustom
 	LogLayoutTypeBuildin1 = Core.LogLayoutTypeBuildin1

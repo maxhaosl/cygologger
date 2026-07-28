@@ -72,6 +72,10 @@ const (
 
 	// LOG_LEVEL_FILTER mirrors the default level filter (all enabled).
 	LOG_LEVEL_FILTER = LogFilterAll
+	// LOG_MOUNT_MAIN mirrors whether the Main aggregate file appender is mounted.
+	// True keeps the historical all-types behaviour (a Main.log aggregates every
+	// enabled level); set false to keep a strict per-level file set.
+	LOG_MOUNT_MAIN = true
 )
 
 // DefaultConfig returns a freshly allocated *CYLoggerConfig initialised with the
@@ -87,7 +91,7 @@ func DefaultConfig() *CYLoggerConfig {
 		eFileMode:       LOG_FILE_MODE,
 		eLayoutType:     LOG_LAYOUT_TYPE,
 		eLogLevelFilter: LOG_LEVEL_FILTER,
-		eMode:           ModeAll,
+		bMountMain:      LOG_MOUNT_MAIN,
 
 		szRemoteAddr:   "127.0.0.1:7000",
 		nClearPeriodSec: 60,

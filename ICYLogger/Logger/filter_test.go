@@ -17,7 +17,6 @@ import (
 func TestLogLevelFilterSuppressesFileCreation(t *testing.T) {
 	dir := t.TempDir()
 	config := Core.GetCYLoggerConfigInstance()
-	config.SetMode(Core.ModeAll)
 	config.SetFileMode(Core.LogFileModeAppend) // deterministic file names
 	config.SetLogLevelFilter(Core.LogFilterErrors)
 
@@ -28,8 +27,7 @@ func TestLogLevelFilterSuppressesFileCreation(t *testing.T) {
 		UnInitLogger()
 		// Restore defaults so other tests (sharing the config singleton) are unaffected.
 		config.SetLogLevelFilter(Core.DefaultLogLevelFilter)
-		config.SetMode(Core.ModeAll)
-		config.SetFileMode(Core.LogFileModeTime)
+			config.SetFileMode(Core.LogFileModeTime)
 	})
 
 	// Emit exactly one line per level.
@@ -87,7 +85,6 @@ func TestLogLevelFilterSuppressesFileCreation(t *testing.T) {
 func TestLogLevelFilterAllKeepsAllFiles(t *testing.T) {
 	dir := t.TempDir()
 	config := Core.GetCYLoggerConfigInstance()
-	config.SetMode(Core.ModeAll)
 	config.SetFileMode(Core.LogFileModeAppend)
 	config.SetLogLevelFilter(Core.LogFilterAll)
 
@@ -122,7 +119,6 @@ func TestLogLevelFilterAllKeepsAllFiles(t *testing.T) {
 func TestLogLevelFilterWarnsAndErrors(t *testing.T) {
 	dir := t.TempDir()
 	config := Core.GetCYLoggerConfigInstance()
-	config.SetMode(Core.ModeAll)
 	config.SetFileMode(Core.LogFileModeAppend)
 	config.SetLogLevelFilter(Core.LogFilterWarnsAndErrors)
 
@@ -132,8 +128,7 @@ func TestLogLevelFilterWarnsAndErrors(t *testing.T) {
 	t.Cleanup(func() {
 		UnInitLogger()
 		config.SetLogLevelFilter(Core.DefaultLogLevelFilter)
-		config.SetMode(Core.ModeAll)
-		config.SetFileMode(Core.LogFileModeTime)
+			config.SetFileMode(Core.LogFileModeTime)
 	})
 
 	LOG_TRACE("t")

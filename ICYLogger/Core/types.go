@@ -83,21 +83,6 @@ const (
 	LogFileModeTime   ELogFileMode = 1
 )
 
-// EMode selects which log-type file appenders are mounted and the effective
-// level filter. It implements the retrieval project's Debug/Release switch:
-//   ModeAll    — mount Trace/Debug/Info/Warn/Error/Fatal/Main (backward-compatible default)
-//   ModeDebug  — mount Trace/Info/Warn/Error (4 files); all four levels recorded
-//   ModeRelease— mount Error only (1 file); only Error recorded; Warn/Trace/Info never created or recorded
-//   ModeProd   — alias of ModeRelease (production: Error file only)
-type EMode int
-
-const (
-	ModeAll EMode = iota
-	ModeDebug
-	ModeRelease
-	ModeProd
-)
-
 // ELogLayoutType selects the built-in layout template.
 type ELogLayoutType int
 
