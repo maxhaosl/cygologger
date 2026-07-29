@@ -229,6 +229,31 @@ func SysCh(channel, format string, args ...any) {
 }
 
 // =============================================================================
+// Explicit-caller logging functions
+//
+// Unlike the convenience functions above, these accept the caller's file,
+// function name, and line number EXPLICITLY instead of deriving them via
+// apiCallerInfo/runtime.Caller. They are intended for wrappers that have
+// already captured the true business call site themselves (e.g. a Scope
+// helper implemented in a wrapping package). Because they bypass
+// apiCallerInfo, the global callerSkip is NOT applied — the supplied location
+// is rendered verbatim in the [func(line)] field. This avoids the situation
+// where a wrapper's own closure (rather than the end user's code) is reported.
+// =============================================================================
+
+// TraceWithCaller writes a trace-level log using the explicitly supplied caller
+// location (file, funcName, line) instead of capturing it automatically.
+func TraceWithCaller(file, funcName string, line int, format string, args ...any) {
+	Logger.GetInstance().WriteLogFmt(int(Core.LogLevelTrace), Core.LogTypeTrace, -1, file, funcName, line, format, args...)
+}
+
+// TraceChWithCaller writes a trace-level log to the given channel using the
+// explicitly supplied caller location (file, funcName, line).
+func TraceChWithCaller(channel, file, funcName string, line int, format string, args ...any) {
+	Logger.GetInstance().WriteLogFmtCh(int(Core.LogLevelTrace), Core.LogTypeTrace, -1, channel, file, funcName, line, format, args...)
+}
+
+// =============================================================================
 // Scope — enter/exit scope logging with defer
 //
 // Usage:

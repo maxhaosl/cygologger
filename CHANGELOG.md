@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.16] - 2026-07-29
+
+### Added
+
+- **Explicit-caller trace APIs `TraceWithCaller` / `TraceChWithCaller`.** These accept the caller's `file`, `funcName`, and `line` explicitly instead of deriving them via `apiCallerInfo`/`runtime.Caller`. They are intended for wrappers that have already captured the true business call site themselves (e.g. a `Scope` helper implemented in a wrapping package). Because they bypass `apiCallerInfo`, the global `callerSkip` is NOT applied and the supplied location is rendered verbatim in `[func(line)]` — avoiding the case where the wrapper's own closure (rather than the end user's code) is reported.
+
+### Verification
+
+- `go build ./...` clean; `go vet ./ICYLogger/` clean; `go test ./ICYLogger/...` all PASS.
+
 ## [0.3.15] - 2026-07-29
 
 ### Fixed
