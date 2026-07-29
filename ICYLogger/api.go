@@ -436,12 +436,14 @@ func WithCallerSkip(n int) Option {
 }
 
 // WithThreadId enables or disables recording the goroutine ID (the T: field)
-// on every log line (default: true). Obtaining the goroutine ID requires a
-// runtime.Stack call whose internal runtime lock serialises ALL concurrent
-// logging goroutines — it is the dominant scalability bottleneck under high
-// concurrency. Latency/throughput-sensitive services should pass
-// WithThreadId(false); the T: field then renders as 0. This mirrors industry
-// practice: zap/zerolog do not record goroutine IDs by default.
+// on every log line. It is OFF by default: obtaining the goroutine ID requires
+// a runtime.Stack call whose internal runtime lock serialises ALL concurrent
+// logging goroutines — under 32 goroutines it drops throughput by ~14x
+// (≈90k vs ≈1.3M lines/sec), the dominant scalability bottleneck at high
+// concurrency. Latency/throughput-sensitive services should leave it off (the
+// T: field then renders as 0). Opt in with WithThreadId(true) only when the T:
+// field is actually needed for debugging. This mirrors industry practice:
+// zap/zerolog do not record goroutine IDs by default.
 func WithThreadId(b bool) Option {
 	return func(c *Core.CYLoggerConfig) { c.SetWithThreadId(b) }
 }

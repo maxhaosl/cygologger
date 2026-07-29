@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.18] - 2026-07-29
+
+### Performance (critical bottleneck fix)
+
+- **Disable goroutine-ID recording (`T:` field) by default.** `LOG_WITH_THREAD_ID` now defaults to `false`. Recording the goroutine ID on every line requires a `runtime.Stack` call whose internal runtime lock **serialises ALL concurrent logging goroutines** — under 32 concurrent writers it dropped throughput from ~1.3M to ~90k lines/sec (**≈14× regression**), dominating CPU profiles (`runtime.Stack.func1` was >90% of logging CPU). This was the single largest scalability bottleneck in the library. The fast path is now the default, matching industry practice (zap/zerolog do not record goroutine IDs). Opt back in with `WithThreadId(true)` only when the `T:` field is actually needed for debugging; the field then renders as `0`. The hot path already consulted a lock-free `gWithThreadId` atomic, so this is purely a default flip with zero per-call branching cost when off.
+- **Verification.** A concurrent stress harness (32 goroutines × 6.4M lines each scenario) measured: file + thread-id **ON (old default) = 89k lines/sec**; file + thread-id **OFF = 1.32M lines/sec**; console + thread-id OFF = 1.37M lines/sec. The console (`CYLoggerBaseAppender`) synchronous `Clone + mutex + channel + cond` path is **not** a bottleneck once thread-id is off (its previous futex contention was a downstream symptom of the `runtime.Stack` serialization). Log content/ordering is unchanged; only the `T:` field becomes `0` unless explicitly opted in.
+
+### Tests
+
+- `Logger/threadid_test.go`: `TestThreadIdDefaultOff` (default records `T:0`, correct + race-free under 16 goroutines) and `TestThreadIdOptInOn` (explicit `WithThreadId(true)` records a non-zero `T:` field, correct + race-free under 8 goroutines). Both run under `-race`; full `go test -race ./ICYLogger/...` passes.
+
 ## [0.3.17] - 2026-07-29
 
 ### Performance

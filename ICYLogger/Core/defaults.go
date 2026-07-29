@@ -78,8 +78,12 @@ const (
 	LOG_MOUNT_MAIN = true
 	// LOG_WITH_THREAD_ID mirrors whether each line records the goroutine ID
 	// (T: field). Fetching it costs a runtime.Stack call whose internal lock
-	// serialises concurrent loggers; disable for maximum throughput.
-	LOG_WITH_THREAD_ID = true
+	// serialises ALL concurrent loggers — under 32 goroutines it drops
+	// throughput by ~14x (≈90k vs ≈1.3M lines/sec). It is OFF by default to
+	// match industry practice (zap/zerolog do not record goroutine IDs), so
+	// latency/throughput-sensitive services get the fast path out of the box.
+	// Opt in with WithThreadId(true) when the T: field is actually needed.
+	LOG_WITH_THREAD_ID = false
 )
 
 // DefaultConfig returns a freshly allocated *CYLoggerConfig initialised with the
