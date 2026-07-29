@@ -103,6 +103,82 @@ func TestMasterSwitchDisablesRotation(t *testing.T) {
 	}
 }
 
+// TestTimeModeRotationNoDoubleTimestamp is a regression test for the
+// double-timestamp bug: in LogFileModeTime the active file name already carries
+// a start timestamp (e.g. "Info_20060102_150405.log"); rotation must NOT append
+// a second full timestamp (which produced names like
+// "Info_20060102_150405.20060102_150406.000000.log"). It must instead use a
+// short incrementing sequence suffix (".1", ".2", ...).
+func TestTimeModeRotationNoDoubleTimestamp(t *testing.T) {
+	dir := t.TempDir()
+	fr := Common.NewCYFileRestriction()
+	fr.SetRestriction(true, true, 60, 24, 300, 60, 100, 20, 500*1024*1024, 1024*1024*1024) // 100-byte limit
+	// LogFileModeTime + empty file name -> the appender derives a timestamped name.
+	a := newFileAppender(Core.LogTypeInfo, "", "", dir, Core.LogFileModeTime)
+	a.SetRestriction(fr)
+	if !a.Init() {
+		t.Fatal("appender Init failed")
+	}
+	t.Cleanup(func() { a.UnInit() })
+
+	// Trigger a few size-based rotations.
+	for i := 0; i < 5; i++ {
+		a.doWrite(strings.Repeat("x", 60))
+	}
+	a.Flush()
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sawRotated := false
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		// The rotated (archived) files are the ones with a sequence suffix
+		// like "Info_<ts>.1.log". No archived name may contain two timestamp
+		// groups. A timestamp group is "_HHMMSS" style; the double-timestamp
+		// bug produced a second ".20060102_150405.000000" segment, i.e. a '.'
+		// immediately followed by 8 digits then '_'. Assert that never happens.
+		trimmed := strings.TrimSuffix(name, ".log")
+		// Count occurrences of the "_150405" date-part pattern is brittle;
+		// instead assert the buggy shape ".<8digits>_" is absent.
+		for i := 0; i+9 < len(trimmed); i++ {
+			if trimmed[i] == '.' {
+				allDigit := true
+				for k := 1; k <= 8; k++ {
+					if trimmed[i+k] < '0' || trimmed[i+k] > '9' {
+						allDigit = false
+						break
+					}
+				}
+				if allDigit && trimmed[i+9] == '_' {
+					t.Fatalf("rotated name %q contains a second timestamp segment (double-timestamp bug)", name)
+				}
+			}
+		}
+		// Detect the new-style archive suffix ".<n>".
+		if idx := strings.LastIndex(trimmed, "."); idx >= 0 {
+			suf := trimmed[idx+1:]
+			isNum := suf != ""
+			for _, c := range suf {
+				if c < '0' || c > '9' {
+					isNum = false
+					break
+				}
+			}
+			if isNum {
+				sawRotated = true
+			}
+		}
+	}
+	if !sawRotated {
+		t.Fatalf("expected at least one sequence-suffixed archive (e.g. Info_<ts>.1.log) after rotation; entries: %v", entries)
+	}
+}
+
 // TestCheckTimeRotationHonorsEnableCheck is a regression test for Bug E: the
 // periodic (per-minute) rotation ticker must not rotate by size when the master
 // detection switch (LOG_LIMIT_ENABLE) is disabled.

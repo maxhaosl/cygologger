@@ -212,7 +212,14 @@ func (c *CYLoggerClearLogFile) DoClear() {
 	if len(files) == 0 {
 		c.mu.Lock()
 		c.bFirstProcess = false
-		c.lastSizeCheck = time.Now()
+		// Update BOTH time gates symmetrically. Previously only lastSizeCheck was
+		// refreshed here, leaving lastCountCheck at its initial (process-start)
+		// value; functionally harmless (the count gate simply fired once ~60s
+		// later) but asymmetric. Advancing both keeps the size- and count-policy
+		// pass schedules consistent on the "first pass, empty directory" path.
+		now := time.Now()
+		c.lastSizeCheck = now
+		c.lastCountCheck = now
 		c.mu.Unlock()
 		return
 	}
@@ -403,14 +410,21 @@ func typeKey(path string) string {
 }
 
 // sortByModTime sorts paths ascending by modification time (oldest first).
+// When two files share the same mtime the path name is used as a deterministic
+// tie-breaker, so the deletion choice is stable/reproducible instead of relying
+// on sort.Slice's unspecified ordering of equal elements.
 func sortByModTime(paths []string) {
 	sort.Slice(paths, func(i, j int) bool {
 		li, ei := os.Stat(paths[i])
 		lj, ej := os.Stat(paths[j])
 		if ei != nil || ej != nil {
-			return i < j
+			return paths[i] < paths[j]
 		}
-		return li.ModTime().Before(lj.ModTime())
+		ti, tj := li.ModTime(), lj.ModTime()
+		if ti.Equal(tj) {
+			return paths[i] < paths[j] // deterministic tie-break on equal mtime
+		}
+		return ti.Before(tj)
 	})
 }
 

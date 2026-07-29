@@ -736,7 +736,17 @@ func (a *CYLoggerFileAppender) rotateFileLocked() {
 	a.openFile()
 }
 
-// rotatedName returns a timestamped variant of the current log file name.
+// rotatedName returns a unique archive name for the current log file.
+//
+// In LogFileModeAppend the active file has a fixed name (e.g. "Info.log"), so a
+// timestamp suffix produces a readable, unique archive: "Info.20060102_150405.000000.log".
+//
+// In LogFileModeTime the active file name ALREADY carries the start timestamp
+// (e.g. "Info_20060102_150405.log", see GetLogFileName). Appending a second full
+// timestamp there yielded the double-timestamp bug
+// ("Info_20060102_150405.20060102_150406.000000.log"). To keep the name readable
+// and unique we instead append a short, monotonically increasing sequence suffix
+// (".1", ".2", ...) that never collides with an existing file in the directory.
 func (a *CYLoggerFileAppender) rotatedName() string {
 	dir := filepath.Dir(a.szCurrentFile)
 	base := filepath.Base(a.szCurrentFile)
@@ -745,6 +755,21 @@ func (a *CYLoggerFileAppender) rotatedName() string {
 	if ext != "" {
 		name = base[:len(base)-len(ext)]
 	}
+
+	// LogFileModeTime: the base already ends with a start timestamp; adding
+	// another one duplicates it. Use an incrementing sequence suffix instead,
+	// probing the directory so we never overwrite an existing archive.
+	if a.eFileMode == Core.LogFileModeTime {
+		for seq := 1; ; seq++ {
+			candidate := filepath.Join(dir, fmt.Sprintf("%s.%d%s", name, seq, ext))
+			if _, err := os.Stat(candidate); os.IsNotExist(err) {
+				return candidate
+			}
+		}
+	}
+
+	// LogFileModeAppend (fixed base name): a timestamp suffix is both unique
+	// and human-readable.
 	return filepath.Join(dir, name+"."+time.Now().Format("20060102_150405.000000")+ext)
 }
 

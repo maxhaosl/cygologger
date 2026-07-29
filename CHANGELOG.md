@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.15] - 2026-07-29
+
+### Fixed
+
+- **Double-timestamp rotated file names.** In `LogFileModeTime` (the default) the active log file name already carries a start timestamp (e.g. `Info_20260729_195720.log`, from `GetLogFileName`). On rotation `rotatedName()` treated that whole name as the base and appended a *second* full timestamp, producing names like `Info_20260729_195720.20260729_195723.930163.log`. `rotatedName()` now detects `LogFileModeTime` and instead appends a short, monotonically increasing sequence suffix (`.1`, `.2`, ...), probing the directory so it never overwrites an existing archive. `LogFileModeAppend` (fixed base name such as `Info.log`) keeps the readable timestamp suffix. Regression test `TestTimeModeRotationNoDoubleTimestamp` added.
+- **`DoClear` first-pass empty-directory time-gate asymmetry.** On the "first pass, empty log directory" early-return branch only `lastSizeCheck` was advanced, leaving `lastCountCheck` at its process-start value (functionally harmless — the count gate simply fired once ~60s later — but asymmetric). Both size- and count-policy time gates are now advanced together on that path.
+- **Non-deterministic deletion order on equal mtime.** `sortByModTime` used `sort.Slice` (unstable) so files sharing the same modification time had an unspecified deletion order. It now uses the path name as a deterministic tie-breaker, making cleanup choices reproducible while still honouring the `<= nFileCountPerType` invariant.
+
+### Verification
+
+- `go build ./...` clean; whole-library `go test -race ./ICYLogger/...` all PASS.
+
 ## [0.3.10] - 2026-07-28
 
 ### Performance
