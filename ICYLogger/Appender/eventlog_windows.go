@@ -1,10 +1,10 @@
 //go:build windows
 
 /*
- * CYGoLogger License
+ * cygologger License
  * -----------
  *
- * CYGoLogger is licensed under the terms of the MIT license.
+ * cygologger is licensed under the terms of the MIT license.
  *
  * Copyright (C) 2023-2024 ShiLiang.Hao <newhaosl@163.com>, foobra<vipgs99@gmail.com>
  *
@@ -23,7 +23,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
+	"github.com/maxhaosl/cygologger/ICYLogger/Core"
 )
 
 var (
@@ -53,7 +53,7 @@ func newSystemLogWriter(appName string, eLogType Core.ELogType) (systemLogWriter
 }
 
 // Write reports the message to the Application event log under the configured
-// source, mapping the CYGoLogger log type to an Event Log event type.
+// source, mapping the cygologger log type to an Event Log event type.
 func (e *eventLogWriter) Write(eLogType int, msg string) error {
 	var et uint16
 	switch Core.ELogType(eLogType) {

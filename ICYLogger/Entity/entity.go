@@ -1,9 +1,9 @@
 /*
- * CYGoLogger License
+ * cygologger License
  * -----------
  *
- * CYGoLogger is licensed under the terms of the MIT license reproduced below.
- * This means that CYGoLogger is free software and can be used for both academic
+ * cygologger is licensed under the terms of the MIT license reproduced below.
+ * This means that cygologger is free software and can be used for both academic
  * and commercial purposes at absolutely no cost.
  *
  * ===============================================================================
@@ -35,9 +35,9 @@ package Entity
 import (
 	"sync"
 
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
-	Common "github.com/maxhaosl/CYGoLogger/ICYLogger/Common"
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Appender"
+	"github.com/maxhaosl/cygologger/ICYLogger/Core"
+	Common "github.com/maxhaosl/cygologger/ICYLogger/Common"
+	"github.com/maxhaosl/cygologger/ICYLogger/Appender"
 )
 
 // CYLoggerEntity manages appenders for a specific log type.

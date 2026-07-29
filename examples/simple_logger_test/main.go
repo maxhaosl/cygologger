@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	gologger "github.com/maxhaosl/CYGoLogger/ICYLogger"
+	gologger "github.com/maxhaosl/cygologger/ICYLogger"
 )
 
 func check(name string, got, want any) {
@@ -17,7 +17,7 @@ func check(name string, got, want any) {
 }
 
 func main() {
-	fmt.Println("=== CYGoLogger Type Test ===")
+	fmt.Println("=== cygologger Type Test ===")
 
 	// Test log types
 	check("LogTypeTrace", gologger.LogTypeTrace, gologger.ELogType(1))

@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 BUILD_DIR="$PROJECT_ROOT/Build"
 
-echo "Building CYGoLogger for Linux..."
+echo "Building cygologger for Linux..."
 
 mkdir -p "$BUILD_DIR/Bin"
 mkdir -p "$BUILD_DIR/Lib"

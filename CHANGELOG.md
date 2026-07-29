@@ -251,7 +251,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Module path migrated from `github.com/cylogger/gologger` to `github.com/maxhaosl/CYGoLogger`
+- Module path migrated from `github.com/cylogger/gologger` to `github.com/maxhaosl/cygologger`
 
 ### Fixed
 

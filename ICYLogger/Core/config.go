@@ -1,9 +1,9 @@
 /*
- * CYGoLogger License
+ * cygologger License
  * -----------
  *
- * CYGoLogger is licensed under the terms of the MIT license reproduced below.
- * This means that CYGoLogger is free software and can be used for both academic
+ * cygologger is licensed under the terms of the MIT license reproduced below.
+ * This means that cygologger is free software and can be used for both academic
  * and commercial purposes at absolutely no cost.
  *
  * ===============================================================================
@@ -63,9 +63,9 @@ type CYLoggerConfig struct {
 	// nCallerSkip adds extra stack frames to skip when capturing the caller
 	// location (file/func/line) rendered on every log line. The base capture
 	// uses skip=1 (the immediate caller of the API function). Thin wrapper
-	// libraries that expose their own logging functions on top of CYGoLogger
+	// libraries that expose their own logging functions on top of cygologger
 	// set this to the number of wrapper frames between the end user and
-	// CYGoLogger (e.g. 2 for a single-level wrapper: user -> wrapper.Info ->
+	// cygologger (e.g. 2 for a single-level wrapper: user -> wrapper.Info ->
 	// Info). Default 0 keeps the historical behaviour.
 	nCallerSkip int
 
@@ -292,7 +292,7 @@ func (c *CYLoggerConfig) IsWithThreadId() bool {
 // SetCallerSkip sets the extra caller-skip frames used when capturing the
 // source location (file/func/line) of every log line. See the nCallerSkip
 // field comment for how to choose the value; a thin wrapper library that adds
-// one layer between the user and CYGoLogger (e.g. user -> wrapper.Info ->
+// one layer between the user and cygologger (e.g. user -> wrapper.Info ->
 // Info) typically passes 2 (the wrapper frame + the API frame itself).
 func (c *CYLoggerConfig) SetCallerSkip(n int) {
 	if n < 0 {

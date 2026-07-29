@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
+	"github.com/maxhaosl/cygologger/ICYLogger/Core"
 )
 
 // TestLogLevelFilterSuppressesFileCreation verifies that a level disabled by

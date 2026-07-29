@@ -1,4 +1,4 @@
-// Command gaps_coverage demonstrates the capabilities added to CYGoLogger to
+// Command gaps_coverage demonstrates the capabilities added to cygologger to
 // fully align with the C++ CYLogger library:
 //   - One-line init that mirrors the C++ CY_LOG_CONFIG macro, with overrideable
 //     defaults (gologger.DefaultConfig / With* options).
@@ -13,13 +13,13 @@ import (
 	"fmt"
 	"time"
 
-	gologger "github.com/maxhaosl/CYGoLogger/ICYLogger"
-	Common "github.com/maxhaosl/CYGoLogger/ICYLogger/Common"
-	Core "github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
+	gologger "github.com/maxhaosl/cygologger/ICYLogger"
+	Common "github.com/maxhaosl/cygologger/ICYLogger/Common"
+	Core "github.com/maxhaosl/cygologger/ICYLogger/Core"
 )
 
 func main() {
-	fmt.Println("=== CYGoLogger Gaps-Coverage Example ===")
+	fmt.Println("=== cygologger Gaps-Coverage Example ===")
 
 	// ---- 1. Override defaults then init with one line (mirrors CY_LOG_CONFIG) ----
 	cfg := gologger.DefaultConfig()

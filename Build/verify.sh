@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# CYGoLogger — one-click verification gate.
+# cygologger — one-click verification gate.
 #
 # Runs the whole validation pipeline and exits non-zero if ANY stage fails:
 #   1. go build ./...                 (compile everything)
@@ -87,7 +87,7 @@ done
 # 6. Summary matrix
 # --------------------------------------------------------------------------
 printf '\n========================================\n'
-printf 'CYGoLogger verification summary\n'
+printf 'cygologger verification summary\n'
 printf '  PASS: %d   FAIL: %d\n' "${#PASS[@]}" "${#FAIL[@]}"
 if [ "${#FAIL[@]}" -gt 0 ]; then
     printf -- '----------------------------------------\n'

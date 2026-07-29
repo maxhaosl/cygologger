@@ -1,5 +1,5 @@
 // Command robustness_verify performs a comprehensive correctness, robustness,
-// concurrency and throughput verification of CYGoLogger.
+// concurrency and throughput verification of cygologger.
 //
 // It covers exactly the dimensions requested for stress validation:
 //   - all log types (Trace/Debug/Info/Warn/Error/Fatal) count integrity
@@ -31,9 +31,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	gologger "github.com/maxhaosl/CYGoLogger/ICYLogger"
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Statistics"
+	gologger "github.com/maxhaosl/cygologger/ICYLogger"
+	"github.com/maxhaosl/cygologger/ICYLogger/Core"
+	"github.com/maxhaosl/cygologger/ICYLogger/Statistics"
 )
 
 // ---------------------------------------------------------------------------
@@ -938,7 +938,7 @@ func runAll() {
 	var pass, fail int
 	var failed []string
 	startAll := time.Now()
-	fmt.Println("=== CYGoLogger Robustness Verification ===")
+	fmt.Println("=== cygologger Robustness Verification ===")
 	for _, c := range cases {
 		fmt.Printf("\n=== %s ===\n", c.name)
 		t0 := time.Now()

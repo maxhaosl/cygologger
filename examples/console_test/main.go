@@ -8,11 +8,11 @@ import (
 	"syscall"
 	"time"
 
-	gologger "github.com/maxhaosl/CYGoLogger/ICYLogger"
+	gologger "github.com/maxhaosl/cygologger/ICYLogger"
 )
 
 func main() {
-	fmt.Println("=== CYGoLogger Console Test ===")
+	fmt.Println("=== cygologger Console Test ===")
 	fmt.Println()
 
 	logPath := "./Log/console"

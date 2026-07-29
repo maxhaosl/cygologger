@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(CYGoLogger C)
+project(cygologger C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -83,7 +83,7 @@ endif()
 
 # ---- Print summary ----
 message(STATUS "")
-message(STATUS "=== CYGoLogger Build Configuration ===")
+message(STATUS "=== cygologger Build Configuration ===")
 message(STATUS "  Platform: ${CMAKE_SYSTEM_NAME}")
 message(STATUS "  Go executable: ${GO_EXECUTABLE}")
 message(STATUS "  Module root: ${GOLOGGER_MODULE_ROOT}")

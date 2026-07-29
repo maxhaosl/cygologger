@@ -4,11 +4,11 @@ import (
 	"sync/atomic"
 	"testing"
 
-	Appender "github.com/maxhaosl/CYGoLogger/ICYLogger/Appender"
-	Common "github.com/maxhaosl/CYGoLogger/ICYLogger/Common"
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Filter"
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Layout"
+	Appender "github.com/maxhaosl/cygologger/ICYLogger/Appender"
+	Common "github.com/maxhaosl/cygologger/ICYLogger/Common"
+	"github.com/maxhaosl/cygologger/ICYLogger/Core"
+	"github.com/maxhaosl/cygologger/ICYLogger/Filter"
+	"github.com/maxhaosl/cygologger/ICYLogger/Layout"
 )
 
 // fakeAppender is an in-memory IAppender used to observe entity routing without

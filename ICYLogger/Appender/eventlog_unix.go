@@ -1,10 +1,10 @@
 //go:build !windows
 
 /*
- * CYGoLogger License
+ * cygologger License
  * -----------
  *
- * CYGoLogger is licensed under the terms of the MIT license.
+ * cygologger is licensed under the terms of the MIT license.
  *
  * Copyright (C) 2023-2024 ShiLiang.Hao <newhaosl@163.com>, foobra<vipgs99@gmail.com>
  *
@@ -22,7 +22,7 @@ package Appender
 import (
 	"log/syslog"
 
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
+	"github.com/maxhaosl/cygologger/ICYLogger/Core"
 )
 
 // syslogWriter is the Unix implementation of systemLogWriter, backed by syslog.
@@ -39,7 +39,7 @@ func newSystemLogWriter(appName string, eLogType Core.ELogType) (systemLogWriter
 	return &syslogWriter{w: w}, nil
 }
 
-// Write maps the CYGoLogger log type to the corresponding syslog priority.
+// Write maps the cygologger log type to the corresponding syslog priority.
 func (s *syslogWriter) Write(eLogType int, msg string) error {
 	switch Core.ELogType(eLogType) {
 	case Core.LogTypeError, Core.LogTypeFatal:

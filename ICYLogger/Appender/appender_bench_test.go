@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	Common "github.com/maxhaosl/CYGoLogger/ICYLogger/Common"
-	Core "github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
-	Layout "github.com/maxhaosl/CYGoLogger/ICYLogger/Layout"
+	Common "github.com/maxhaosl/cygologger/ICYLogger/Common"
+	Core "github.com/maxhaosl/cygologger/ICYLogger/Core"
+	Layout "github.com/maxhaosl/cygologger/ICYLogger/Layout"
 )
 
 // newBenchMessage builds a realistic pooled message for appender benchmarks.

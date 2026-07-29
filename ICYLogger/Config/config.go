@@ -1,5 +1,5 @@
 /*
- * CYGoLogger License
+ * cygologger License
  * -----------
  * ... (MIT license) ...
  */
@@ -9,7 +9,7 @@
 package Config
 
 import (
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
+	"github.com/maxhaosl/cygologger/ICYLogger/Core"
 )
 
 // CYLoggerConfig re-exports Core.CYLoggerConfig for backward compatibility.

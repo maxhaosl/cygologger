@@ -4,11 +4,11 @@ package main
 import (
 	"fmt"
 
-	gologger "github.com/maxhaosl/CYGoLogger/ICYLogger"
+	gologger "github.com/maxhaosl/cygologger/ICYLogger"
 )
 
 func main() {
-	fmt.Println("=== CYGoLogger Simple Example ===")
+	fmt.Println("=== cygologger Simple Example ===")
 	fmt.Println()
 
 	fmt.Println("Log Types:")

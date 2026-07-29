@@ -1,4 +1,4 @@
-// Command new_features demonstrates the newly ported CYGoLogger capabilities:
+// Command new_features demonstrates the newly ported cygologger capabilities:
 //   - One-line initialization + Go-idiomatic logging
 //   - Hex dump logging
 //   - Escape (special-character-safe) logging
@@ -11,11 +11,11 @@ import (
 	"bytes"
 	"fmt"
 
-	gologger "github.com/maxhaosl/CYGoLogger/ICYLogger"
+	gologger "github.com/maxhaosl/cygologger/ICYLogger"
 )
 
 func main() {
-	fmt.Println("=== CYGoLogger New Features Example ===")
+	fmt.Println("=== cygologger New Features Example ===")
 
 	// ---- 1. One-line init (console + files under ./logs) ----
 	gologger.InitDefault("./logs")
@@ -30,7 +30,7 @@ func main() {
 	gologger.Warn("this is a warning")
 
 	// ---- 3. Hex dump logging ----
-	payload := []byte("Hello, CYGoLogger! \x00\x01\x02binary")
+	payload := []byte("Hello, cygologger! \x00\x01\x02binary")
 	gologger.HexInfo(payload)
 
 	// ---- 4. Escape logging (safely logs brackets/commas) ----

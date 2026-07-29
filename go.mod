@@ -1,4 +1,4 @@
-module github.com/maxhaosl/CYGoLogger
+module github.com/maxhaosl/cygologger
 
 go 1.21
 

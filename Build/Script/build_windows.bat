@@ -1,7 +1,7 @@
 @echo off
 REM Build script for Windows
 
-echo Building CYGoLogger for Windows...
+echo Building cygologger for Windows...
 
 set SCRIPT_DIR=%~dp0
 set PROJECT_ROOT=%SCRIPT_DIR%..\..

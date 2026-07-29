@@ -1,5 +1,5 @@
 /*
- * CYGoLogger License ...
+ * cygologger License ...
  */
 
 package Layout
@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
+	"github.com/maxhaosl/cygologger/ICYLogger/Core"
 )
 
 // TestLayout4Resolution verifies the new built-in layout 4 resolves from the

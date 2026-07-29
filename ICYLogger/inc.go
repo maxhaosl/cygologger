@@ -1,9 +1,9 @@
 /*
- * CYGoLogger License
+ * cygologger License
  * -----------
  *
- * CYGoLogger is licensed under the terms of the MIT license reproduced below.
- * This means that CYGoLogger is free software and can be used for both academic
+ * cygologger is licensed under the terms of the MIT license reproduced below.
+ * This means that cygologger is free software and can be used for both academic
  * and commercial purposes at absolutely no cost.
  *
  * ===============================================================================
@@ -29,11 +29,11 @@
  * THE SOFTWARE.
  */
 
-// Package ICYLogger is the single import entry point for the CYGoLogger library.
+// Package ICYLogger is the single import entry point for the cygologger library.
 // All public types, constants, and functions are re-exported from sub-packages,
 // allowing users to import everything with a single import:
 //
-//	import gologger "github.com/maxhaosl/CYGoLogger/ICYLogger"
+//	import gologger "github.com/maxhaosl/cygologger/ICYLogger"
 //
 // Example usage (new Go-idiomatic API with auto caller info):
 //
@@ -51,19 +51,19 @@
 package ICYLogger
 
 import (
-	Common "github.com/maxhaosl/CYGoLogger/ICYLogger/Common"
-	Core "github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
-	Encryption "github.com/maxhaosl/CYGoLogger/ICYLogger/Encryption"
-	Entity "github.com/maxhaosl/CYGoLogger/ICYLogger/Entity"
-	Appender "github.com/maxhaosl/CYGoLogger/ICYLogger/Appender"
-	Filter "github.com/maxhaosl/CYGoLogger/ICYLogger/Filter"
-	Layout "github.com/maxhaosl/CYGoLogger/ICYLogger/Layout"
-	Logger "github.com/maxhaosl/CYGoLogger/ICYLogger/Logger"
-	UpLoad "github.com/maxhaosl/CYGoLogger/ICYLogger/UpLoad"
+	Common "github.com/maxhaosl/cygologger/ICYLogger/Common"
+	Core "github.com/maxhaosl/cygologger/ICYLogger/Core"
+	Encryption "github.com/maxhaosl/cygologger/ICYLogger/Encryption"
+	Entity "github.com/maxhaosl/cygologger/ICYLogger/Entity"
+	Appender "github.com/maxhaosl/cygologger/ICYLogger/Appender"
+	Filter "github.com/maxhaosl/cygologger/ICYLogger/Filter"
+	Layout "github.com/maxhaosl/cygologger/ICYLogger/Layout"
+	Logger "github.com/maxhaosl/cygologger/ICYLogger/Logger"
+	UpLoad "github.com/maxhaosl/cygologger/ICYLogger/UpLoad"
 )
 
 // =============================================================================
-// Core types and constants (github.com/maxhaosl/CYGoLogger/ICYLogger/Core)
+// Core types and constants (github.com/maxhaosl/cygologger/ICYLogger/Core)
 // =============================================================================
 
 type (
@@ -135,7 +135,7 @@ const (
 )
 
 // =============================================================================
-// Layout interfaces (github.com/maxhaosl/CYGoLogger/ICYLogger/Layout)
+// Layout interfaces (github.com/maxhaosl/cygologger/ICYLogger/Layout)
 // =============================================================================
 
 type (
@@ -144,7 +144,7 @@ type (
 )
 
 // =============================================================================
-// Filter types (github.com/maxhaosl/CYGoLogger/ICYLogger/Filter)
+// Filter types (github.com/maxhaosl/cygologger/ICYLogger/Filter)
 // =============================================================================
 
 type (
@@ -166,7 +166,7 @@ func NewPatternFilter() *Filter.ICYLoggerPatternFilter {
 }
 
 // =============================================================================
-// Logger convenience functions (github.com/maxhaosl/CYGoLogger/ICYLogger/Logger)
+// Logger convenience functions (github.com/maxhaosl/cygologger/ICYLogger/Logger)
 // =============================================================================
 
 func InitLogger(szLogPath string, bShowConsoleWindow bool) bool {
@@ -215,7 +215,7 @@ func LOG_DIRECT_MAIN_CH(szChannel, szMsg string, args ...any)  { Logger.LOG_DIRE
 
 
 // =============================================================================
-// Entity / file management helpers (github.com/maxhaosl/CYGoLogger/ICYLogger/Entity)
+// Entity / file management helpers (github.com/maxhaosl/cygologger/ICYLogger/Entity)
 // =============================================================================
 
 // ForceNewFile forces every log entity to rotate to a fresh file (C++ ForceEntityNewFile).
@@ -244,7 +244,7 @@ func ClearConsole() {
 }
 
 // =============================================================================
-// Layout functions (github.com/maxhaosl/CYGoLogger/ICYLogger/Layout)
+// Layout functions (github.com/maxhaosl/cygologger/ICYLogger/Layout)
 // =============================================================================
 
 func NewCYLoggerTemplateLayoutCustom(inner Layout.ICYLoggerTemplateLayout) *Layout.CYLoggerTemplateLayoutCustom {
@@ -255,7 +255,7 @@ func GetCYLoggerTemplateLayoutManagerInstance() *Layout.CYLoggerTemplateLayoutMa
 }
 
 // =============================================================================
-// Filter functions (github.com/maxhaosl/CYGoLogger/ICYLogger/Filter)
+// Filter functions (github.com/maxhaosl/cygologger/ICYLogger/Filter)
 // =============================================================================
 
 func GetCYLoggerPatternFilterChainInstance() *Filter.CYLoggerPatternFilterChain {
@@ -274,7 +274,7 @@ func GetCYLoggerConfigInstance() *Core.CYLoggerConfig {
 }
 
 // =============================================================================
-// SimpleLog / Exception types (github.com/maxhaosl/CYGoLogger/ICYLogger/Common)
+// SimpleLog / Exception types (github.com/maxhaosl/cygologger/ICYLogger/Common)
 // =============================================================================
 
 type (
@@ -299,7 +299,7 @@ func GetCYExceptionLogFileInstance() *Common.CYExceptionLogFile {
 }
 
 // =============================================================================
-// UpLoad types (github.com/maxhaosl/CYGoLogger/ICYLogger/UpLoad)
+// UpLoad types (github.com/maxhaosl/cygologger/ICYLogger/UpLoad)
 // =============================================================================
 
 type (
@@ -317,7 +317,7 @@ func GetCYUpLoadFactoryInstance() *UpLoad.CYUpLoadFactory {
 }
 
 // =============================================================================
-// Encryption types (github.com/maxhaosl/CYGoLogger/ICYLogger/Encryption)
+// Encryption types (github.com/maxhaosl/cygologger/ICYLogger/Encryption)
 // =============================================================================
 
 type (

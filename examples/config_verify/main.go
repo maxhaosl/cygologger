@@ -1,9 +1,9 @@
 /*
- * CYGoLogger License
+ * cygologger License
  * -----------
  *
- * CYGoLogger is licensed under the terms of the MIT license reproduced below.
- * This means that CYGoLogger is free software and can be used for both academic
+ * cygologger is licensed under the terms of the MIT license reproduced below.
+ * This means that cygologger is free software and can be used for both academic
  * and commercial purposes at absolutely no cost.
  *
  * ===============================================================================
@@ -54,9 +54,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	gologger "github.com/maxhaosl/CYGoLogger/ICYLogger"
-	Appender "github.com/maxhaosl/CYGoLogger/ICYLogger/Appender"
-	Core "github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
+	gologger "github.com/maxhaosl/cygologger/ICYLogger"
+	Appender "github.com/maxhaosl/cygologger/ICYLogger/Appender"
+	Core "github.com/maxhaosl/cygologger/ICYLogger/Core"
 )
 
 var pass, fail int

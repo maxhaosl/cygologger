@@ -1,5 +1,5 @@
 /*
- * CYGoLogger License ... (MIT license) ...
+ * cygologger License ... (MIT license) ...
  */
 
 // Package Statistics tracks all logging statistics atomically.
@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
-	Common "github.com/maxhaosl/CYGoLogger/ICYLogger/Common"
+	"github.com/maxhaosl/cygologger/ICYLogger/Core"
+	Common "github.com/maxhaosl/cygologger/ICYLogger/Common"
 )
 
 // perTypeStats holds statistics for a single log type.

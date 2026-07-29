@@ -1,9 +1,9 @@
 /*
- * CYGoLogger License
+ * cygologger License
  * -----------
  *
- * CYGoLogger is licensed under the terms of the MIT license reproduced below.
- * This means that CYGoLogger is free software and can be used for both academic
+ * cygologger is licensed under the terms of the MIT license reproduced below.
+ * This means that cygologger is free software and can be used for both academic
  * and commercial purposes at absolutely no cost.
  *
  * ===============================================================================
@@ -32,8 +32,8 @@
 // Package Layout provides the logging layout interfaces.
 package Layout
 
-import "github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
-import "github.com/maxhaosl/CYGoLogger/ICYLogger/Filter"
+import "github.com/maxhaosl/cygologger/ICYLogger/Core"
+import "github.com/maxhaosl/cygologger/ICYLogger/Filter"
 
 // ICYLogger is the main public interface for the logging library.
 type ICYLogger interface {

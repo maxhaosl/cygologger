@@ -1,5 +1,5 @@
 // Command feature_verify is the single entry point that proves every
-// CYGoLogger capability works end-to-end through the public Go API.
+// cygologger capability works end-to-end through the public Go API.
 //
 // It is a full-feature matrix: each capability is exercised and asserted,
 // printing one PASS/FAIL line per feature and a final tally. The process
@@ -25,12 +25,12 @@ import (
 	"sync"
 	"time"
 
-	gologger "github.com/maxhaosl/CYGoLogger/ICYLogger"
-	Appender "github.com/maxhaosl/CYGoLogger/ICYLogger/Appender"
-	Common "github.com/maxhaosl/CYGoLogger/ICYLogger/Common"
-	Core "github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
-	Schedule "github.com/maxhaosl/CYGoLogger/ICYLogger/Schedule"
-	UpLoad "github.com/maxhaosl/CYGoLogger/ICYLogger/UpLoad"
+	gologger "github.com/maxhaosl/cygologger/ICYLogger"
+	Appender "github.com/maxhaosl/cygologger/ICYLogger/Appender"
+	Common "github.com/maxhaosl/cygologger/ICYLogger/Common"
+	Core "github.com/maxhaosl/cygologger/ICYLogger/Core"
+	Schedule "github.com/maxhaosl/cygologger/ICYLogger/Schedule"
+	UpLoad "github.com/maxhaosl/cygologger/ICYLogger/UpLoad"
 )
 
 var (
@@ -192,7 +192,7 @@ func (s *inProcessFTP) serve() {
 }
 
 func main() {
-	fmt.Println("=== CYGoLogger full feature matrix ===")
+	fmt.Println("=== cygologger full feature matrix ===")
 
 	// ------------------------------------------------------------------
 	// [A] Compile-time default constants equal the C++ header values.

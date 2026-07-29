@@ -1,4 +1,4 @@
-# CYGoLogger
+# cygologger
 
 A high-performance, async, multi-level logging library for Go, inspired by the [CYLogger](https://github.com/maxhaosl/CYLogger) C++ library. Supports console, file (with rotation), remote TCP, and Unix syslog outputs.
 
@@ -35,9 +35,9 @@ A high-performance, async, multi-level logging library for Go, inspired by the [
 In your own module directory (must already contain a `go.mod`; if not, run `go mod init <your-module>` first):
 
 ```bash
-go get github.com/maxhaosl/CYGoLogger@latest   # latest tagged release
+go get github.com/maxhaosl/cygologger@latest   # latest tagged release
 # or pin a specific version:
-go get github.com/maxhaosl/CYGoLogger@v0.3.10
+go get github.com/maxhaosl/cygologger@v0.3.10
 ```
 
 This automatically adds the `require` line to your `go.mod` and updates `go.sum`.
@@ -51,7 +51,7 @@ module your.example/yourapp
 
 go 1.21
 
-require github.com/maxhaosl/CYGoLogger v0.3.10
+require github.com/maxhaosl/cygologger v0.3.10
 ```
 
 Then resolve and download it:
@@ -71,9 +71,9 @@ module your.example/yourapp
 
 go 1.21
 
-require github.com/maxhaosl/CYGoLogger v0.0.0
+require github.com/maxhaosl/cygologger v0.0.0
 
-replace github.com/maxhaosl/CYGoLogger => ../CYGoLogger  // relative or absolute path to the clone
+replace github.com/maxhaosl/cygologger => ../cygologger  // relative or absolute path to the clone
 ```
 
 Then run `go mod tidy`. With a `replace` in effect, no network access or
@@ -82,7 +82,7 @@ published tag is needed.
 ### Import and use
 
 ```go
-import gologger "github.com/maxhaosl/CYGoLogger/ICYLogger"
+import gologger "github.com/maxhaosl/cygologger/ICYLogger"
 ```
 
 Only the `ICYLogger` package needs to be imported — it re-exports the entire public API.
@@ -98,7 +98,7 @@ calls needed:
 package main
 
 import (
-    gologger "github.com/maxhaosl/CYGoLogger/ICYLogger"
+    gologger "github.com/maxhaosl/cygologger/ICYLogger"
 )
 
 func main() {
@@ -201,7 +201,7 @@ If a message has no channel of its own, the appender's channel (set via
 For the most common cases you only need **one import and one line**:
 
 ```go
-import gologger "github.com/maxhaosl/CYGoLogger/ICYLogger"
+import gologger "github.com/maxhaosl/cygologger/ICYLogger"
 
 func main() {
     gologger.InitDefault("./Log")   // zero-config: console + rotated file, level FILTER_ALL
@@ -463,7 +463,7 @@ fmt.Printf("Info Lines:  %d\n", stats.NInfoLine)
 
 ## Concurrent Logging
 
-CYGoLogger is safe for concurrent use. Multiple goroutines can call logging functions simultaneously.
+cygologger is safe for concurrent use. Multiple goroutines can call logging functions simultaneously.
 
 ```go
 for i := 0; i < 5; i++ {
@@ -506,7 +506,7 @@ ICYLogger/
 
 ## One-Click Verification
 
-CYGoLogger ships with a single command that proves **every** feature works, is
+cygologger ships with a single command that proves **every** feature works, is
 stable under `-race`, and performs well — the same gate used to keep the library
 commercial-grade:
 
@@ -563,7 +563,7 @@ line per feature, e.g.
 
 ## License
 
-CYGoLogger is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+cygologger is licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ## Authors
 

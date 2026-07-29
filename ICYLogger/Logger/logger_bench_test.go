@@ -3,7 +3,7 @@ package logger
 import (
 	"testing"
 
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
+	"github.com/maxhaosl/cygologger/ICYLogger/Core"
 )
 
 // benchInit initializes the logger once per benchmark into a temp dir with the

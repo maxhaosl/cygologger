@@ -1,8 +1,8 @@
 /*
- * CYGoLogger License
+ * cygologger License
  * -----------
  *
- * CYGoLogger is licensed under the terms of the MIT license reproduced below.
+ * cygologger is licensed under the terms of the MIT license reproduced below.
  *
  * Copyright (C) 2023-2024 ShiLiang.Hao <newhaosl@163.com>, foobra<vipgs99@gmail.com>
  *
@@ -30,7 +30,7 @@ package Statistics
 import (
 	"testing"
 
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
+	"github.com/maxhaosl/cygologger/ICYLogger/Core"
 )
 
 // TestReset verifies that Reset() zeroes all cumulative counters (lines, bytes,

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Cross-platform build script for CYGoLogger
+# Cross-platform build script for cygologger
 
 set -e
 
@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 echo "========================================="
-echo "CYGoLogger Cross-Platform Build Script"
+echo "cygologger Cross-Platform Build Script"
 echo "========================================="
 echo "Project root: $PROJECT_ROOT"
 echo ""

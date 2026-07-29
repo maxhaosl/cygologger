@@ -3,7 +3,7 @@ package Layout
 import (
 	"testing"
 
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
+	"github.com/maxhaosl/cygologger/ICYLogger/Core"
 )
 
 // benchLayout runs GetFormatMessage for the given layout type with a typical

@@ -1,9 +1,9 @@
 /*
- * CYGoLogger License
+ * cygologger License
  * -----------
  *
- * CYGoLogger is licensed under the terms of the MIT license reproduced below.
- * This means that CYGoLogger is free software and can be used for both academic
+ * cygologger is licensed under the terms of the MIT license reproduced below.
+ * This means that cygologger is free software and can be used for both academic
  * and commercial purposes at absolutely no cost.
  *
  * ===============================================================================
@@ -37,15 +37,15 @@ import (
 	"strings"
 	"sync/atomic"
 
-	Appender "github.com/maxhaosl/CYGoLogger/ICYLogger/Appender"
-	Common "github.com/maxhaosl/CYGoLogger/ICYLogger/Common"
-	Core "github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
-	Encryption "github.com/maxhaosl/CYGoLogger/ICYLogger/Encryption"
-	Filter "github.com/maxhaosl/CYGoLogger/ICYLogger/Filter"
-	Layout "github.com/maxhaosl/CYGoLogger/ICYLogger/Layout"
-	Logger "github.com/maxhaosl/CYGoLogger/ICYLogger/Logger"
-	Schedule "github.com/maxhaosl/CYGoLogger/ICYLogger/Schedule"
-	UpLoad "github.com/maxhaosl/CYGoLogger/ICYLogger/UpLoad"
+	Appender "github.com/maxhaosl/cygologger/ICYLogger/Appender"
+	Common "github.com/maxhaosl/cygologger/ICYLogger/Common"
+	Core "github.com/maxhaosl/cygologger/ICYLogger/Core"
+	Encryption "github.com/maxhaosl/cygologger/ICYLogger/Encryption"
+	Filter "github.com/maxhaosl/cygologger/ICYLogger/Filter"
+	Layout "github.com/maxhaosl/cygologger/ICYLogger/Layout"
+	Logger "github.com/maxhaosl/cygologger/ICYLogger/Logger"
+	Schedule "github.com/maxhaosl/cygologger/ICYLogger/Schedule"
+	UpLoad "github.com/maxhaosl/cygologger/ICYLogger/UpLoad"
 )
 
 // callerSkip is the extra stack-frame count added on top of the base capture
@@ -90,7 +90,7 @@ func apiCallerInfo(skip int) (file, funcName string, line int) {
 // Go-idiomatic convenience logging functions with automatic caller capture
 //
 // Usage:
-//   import gologger "github.com/maxhaosl/CYGoLogger/ICYLogger"
+//   import gologger "github.com/maxhaosl/cygologger/ICYLogger"
 //
 //   gologger.InitDefault("./logs")
 //   gologger.Debug("value = %d", val)
@@ -328,7 +328,7 @@ func WithMountMain(b bool) Option {
 // WithCallerSkip sets how many extra stack frames to skip when capturing the
 // source location (file/func/line) rendered on every log line. This is for
 // thin wrapper libraries that expose their own logging functions on top of
-// CYGoLogger: the base capture already skips 1 frame (the API function), and
+// cygologger: the base capture already skips 1 frame (the API function), and
 // the wrapper must skip its own frames so [func(line)] points at the end
 // user's code rather than the wrapper. For a single-level wrapper
 // (user -> wrapper.Info -> Info) pass 2 (the wrapper frame + the API frame);

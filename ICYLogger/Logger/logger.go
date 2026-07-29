@@ -1,9 +1,9 @@
 /*
- * CYGoLogger License
+ * cygologger License
  * -----------
  *
- * CYGoLogger is licensed under the terms of the MIT license reproduced below.
- * This means that CYGoLogger is free software and can be used for both academic
+ * cygologger is licensed under the terms of the MIT license reproduced below.
+ * This means that cygologger is free software and can be used for both academic
  * and commercial purposes at absolutely no cost.
  *
  * ===============================================================================
@@ -41,14 +41,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Filter"
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Layout"
-	Common "github.com/maxhaosl/CYGoLogger/ICYLogger/Common"
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Entity"
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Appender"
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Schedule"
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Statistics"
+	"github.com/maxhaosl/cygologger/ICYLogger/Core"
+	"github.com/maxhaosl/cygologger/ICYLogger/Filter"
+	"github.com/maxhaosl/cygologger/ICYLogger/Layout"
+	Common "github.com/maxhaosl/cygologger/ICYLogger/Common"
+	"github.com/maxhaosl/cygologger/ICYLogger/Entity"
+	"github.com/maxhaosl/cygologger/ICYLogger/Appender"
+	"github.com/maxhaosl/cygologger/ICYLogger/Schedule"
+	"github.com/maxhaosl/cygologger/ICYLogger/Statistics"
 )
 
 // gWithThreadId caches the WithThreadId configuration switch as an atomic so

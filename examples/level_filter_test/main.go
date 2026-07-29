@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	gologger "github.com/maxhaosl/CYGoLogger/ICYLogger"
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
+	gologger "github.com/maxhaosl/cygologger/ICYLogger"
+	"github.com/maxhaosl/cygologger/ICYLogger/Core"
 )
 
 var failures int
@@ -136,7 +136,7 @@ func runCase(name string, filter Core.ELogLevelFilter, enabled, disabled []strin
 }
 
 func main() {
-	fmt.Println("=== CYGoLogger LOG_LEVEL_FILTER verification ===")
+	fmt.Println("=== cygologger LOG_LEVEL_FILTER verification ===")
 
 	// Only Error + Fatal (+Main) should appear.
 	runCase("LogFilterErrors", gologger.LogFilterErrors,

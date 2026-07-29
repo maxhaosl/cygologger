@@ -1,4 +1,4 @@
-// Command quickstart demonstrates the one-line initialization of CYGoLogger.
+// Command quickstart demonstrates the one-line initialization of cygologger.
 //
 // A single call to gologger.InitDefault("./logs") automatically mounts a full
 // set of file appenders (Trace/Debug/Info/Warn/Error/Fatal/Main) plus the
@@ -9,7 +9,7 @@ package main
 import (
 	"fmt"
 
-	gologger "github.com/maxhaosl/CYGoLogger/ICYLogger"
+	gologger "github.com/maxhaosl/cygologger/ICYLogger"
 )
 
 func main() {

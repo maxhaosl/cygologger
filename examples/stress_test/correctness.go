@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	gologger "github.com/maxhaosl/CYGoLogger/ICYLogger"
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
+	gologger "github.com/maxhaosl/cygologger/ICYLogger"
+	"github.com/maxhaosl/cygologger/ICYLogger/Core"
 )
 
 // ---------------------------------------------------------------------------

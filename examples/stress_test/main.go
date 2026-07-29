@@ -1,4 +1,4 @@
-// Command stress_test performs comprehensive stress/load testing of CYGoLogger.
+// Command stress_test performs comprehensive stress/load testing of cygologger.
 //
 // All tests run sequentially in the same process — no sub-process spawning,
 // no build-cache contention, no deadlocks.  The library supports clean
@@ -37,9 +37,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	gologger "github.com/maxhaosl/CYGoLogger/ICYLogger"
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Statistics"
+	gologger "github.com/maxhaosl/cygologger/ICYLogger"
+	"github.com/maxhaosl/cygologger/ICYLogger/Core"
+	"github.com/maxhaosl/cygologger/ICYLogger/Statistics"
 )
 
 // ---------------------------------------------------------------------------

@@ -6,11 +6,11 @@ import (
 	"os"
 	"time"
 
-	gologger "github.com/maxhaosl/CYGoLogger/ICYLogger"
+	gologger "github.com/maxhaosl/cygologger/ICYLogger"
 )
 
 func main() {
-	fmt.Println("=== CYGoLogger Simple Test ===")
+	fmt.Println("=== cygologger Simple Test ===")
 	fmt.Println()
 
 	ok := gologger.InitLogger("./Log", false)

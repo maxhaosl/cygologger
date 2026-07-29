@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	gologger "github.com/maxhaosl/CYGoLogger/ICYLogger"
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
+	gologger "github.com/maxhaosl/cygologger/ICYLogger"
+	"github.com/maxhaosl/cygologger/ICYLogger/Core"
 )
 
 var failures int
@@ -134,7 +134,7 @@ func runCase(name string, filter Core.ELogLevelFilter, mountMain bool, enabled, 
 }
 
 func main() {
-	fmt.Println("=== CYGoLogger WithMountMain verification ===")
+	fmt.Println("=== cygologger WithMountMain verification ===")
 
 	// Strict Debug set: Trace/Info/Warn/Error (4 files), no Main.log.
 	runCase("MountMain(false)+DebugStrict",

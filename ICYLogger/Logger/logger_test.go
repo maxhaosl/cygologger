@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/maxhaosl/CYGoLogger/ICYLogger/Core"
+	"github.com/maxhaosl/cygologger/ICYLogger/Core"
 )
 
 // ---------------------------------------------------------------------------

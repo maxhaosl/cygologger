@@ -1,9 +1,9 @@
 /*
- * CYGoLogger License
+ * cygologger License
  * -----------
  *
- * CYGoLogger is licensed under the terms of the MIT license reproduced below.
- * This means that CYGoLogger is free software and can be licensed for both academic
+ * cygologger is licensed under the terms of the MIT license reproduced below.
+ * This means that cygologger is free software and can be licensed for both academic
  * and commercial purposes at absolutely no cost.
  *
  * ===============================================================================
@@ -36,7 +36,7 @@ import (
 	"strings"
 	"sync"
 
-	Common "github.com/maxhaosl/CYGoLogger/ICYLogger/Common"
+	Common "github.com/maxhaosl/cygologger/ICYLogger/Common"
 )
 
 // Escape characters for log message parsing.
