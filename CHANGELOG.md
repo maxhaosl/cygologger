@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.17] - 2026-07-29
+
+### Performance
+
+- **API entry-point early level filter.** Every filtered logging function in `api.go` (`Trace`/`Debug`/`Info`/`Warn`/`Error`/`Fatal`/`Main`/`Remote`/`Sys`/`Console` and their `Ch`/`Hex`/`Escape`/`WithCaller`/`Scope` variants) now consults a lock-free mirror of the active level filter (`Logger.LevelEnabled`) and returns immediately when the level is suppressed. Previously the filter check lived only inside `control.route()` (after `apiCallerInfo`/`runtime.Caller` and `fmt.Sprintf` had already run), so a disabled level in `release`/`prod` mode still paid for caller capture + message formatting on every call. The mirror (`gLevelFilter`, an `atomic.Int32`) is updated by the sole mutator of `eLogLevel` — `CYLoggerControl.SetLogLevel` — so it can never diverge from the in-route filter. Behaviour (which files are created, what is written, and the `[func(line)]` caller reported) is unchanged; only suppressed calls now short-circuit before any expensive work. Measured: a filtered `Trace` call drops from ~10.6 µs/op to ~17 ns/op (≈600× cheaper). `Direct*` variants are intentionally unaffected (they bypass the filter by design).
+
+### Verification
+
+- `go build ./...` clean; `go vet ./ICYLogger/ ./ICYLogger/Logger/` clean; `go test -race ./ICYLogger/...` all PASS (incl. new `TestEarlyLevelFilterDropsDisabledLevels` / `TestEarlyLevelFilterAllKeepsEnabled` and `BenchmarkEarlyFilteredTrace`).
+
 ## [0.3.16] - 2026-07-29
 
 ### Added

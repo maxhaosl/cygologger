@@ -483,8 +483,11 @@ func (c *CYLoggerControl) WriteDirect(eMsgType Core.ELogType, msg *Common.CYBase
 
 func (c *CYLoggerControl) SetLogLevel(eFilter Core.ELogLevelFilter) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.eLogLevel = eFilter
+	c.mu.Unlock()
+	// Mirror the filter in the lock-free gLevelFilter so the api.go entry-point
+	// early filter (LevelEnabled) stays in lockstep with the in-route filter.
+	gLevelFilter.Store(int32(eFilter))
 }
 
 func (c *CYLoggerControl) GetLogLevel() Core.ELogLevelFilter {

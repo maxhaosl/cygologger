@@ -104,60 +104,90 @@ func apiCallerInfo(skip int) (file, funcName string, line int) {
 
 // Trace writes a trace-level log message (log type Trace, most verbose).
 func Trace(format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelTrace) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteLogFmt(int(Core.LogLevelTrace), Core.LogTypeTrace, -1, file, funcName, line, format, args...)
 }
 
 // Debug writes a debug-level log message.
 func Debug(format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelDebug) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteLogFmt(int(Core.LogLevelDebug), Core.LogTypeDebug, -1, file, funcName, line, format, args...)
 }
 
 // Info writes an info-level log message.
 func Info(format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelInfo) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteLogFmt(int(Core.LogLevelInfo), Core.LogTypeInfo, -1, file, funcName, line, format, args...)
 }
 
 // Warn writes a warning-level log message.
 func Warn(format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelWarn) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteLogFmt(int(Core.LogLevelWarn), Core.LogTypeWarn, -1, file, funcName, line, format, args...)
 }
 
 // Error writes an error-level log message.
 func Error(format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelError) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteLogFmt(int(Core.LogLevelError), Core.LogTypeError, -1, file, funcName, line, format, args...)
 }
 
 // Fatal writes a fatal-level log message (highest severity).
 func Fatal(format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelFatal) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteLogFmt(int(Core.LogLevelFatal), Core.LogTypeFatal, -1, file, funcName, line, format, args...)
 }
 
 // Main writes a log message to the main application log (LogTypeMain).
 func Main(format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelInfo) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteLogFmt(int(Core.LogLevelInfo), Core.LogTypeMain, -1, file, funcName, line, format, args...)
 }
 
 // Remote writes a log message to the remote log (LogTypeRemote, TCP).
 func Remote(format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelRemote) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteLogFmt(int(Core.LogLevelRemote), Core.LogTypeRemote, -1, file, funcName, line, format, args...)
 }
 
 // Sys writes a log message to the system event log (LogTypeSys, syslog/EventLog).
 func Sys(format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelSys) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteLogFmt(int(Core.LogLevelSys), Core.LogTypeSys, -1, file, funcName, line, format, args...)
 }
 
 // Console writes a log message to the console appender only.
 func Console(format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelConsole) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteLogFmt(int(Core.LogLevelConsole), Core.LogTypeConsole, -1, file, funcName, line, format, args...)
 }
@@ -176,54 +206,81 @@ func Console(format string, args ...any) {
 
 // TraceCh writes a trace-level log to the given channel.
 func TraceCh(channel, format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelTrace) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteLogFmtCh(int(Core.LogLevelTrace), Core.LogTypeTrace, -1, channel, file, funcName, line, format, args...)
 }
 
 // DebugCh writes a debug-level log to the given channel.
 func DebugCh(channel, format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelDebug) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteLogFmtCh(int(Core.LogLevelDebug), Core.LogTypeDebug, -1, channel, file, funcName, line, format, args...)
 }
 
 // InfoCh writes an info-level log to the given channel.
 func InfoCh(channel, format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelInfo) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteLogFmtCh(int(Core.LogLevelInfo), Core.LogTypeInfo, -1, channel, file, funcName, line, format, args...)
 }
 
 // WarnCh writes a warn-level log to the given channel.
 func WarnCh(channel, format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelWarn) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteLogFmtCh(int(Core.LogLevelWarn), Core.LogTypeWarn, -1, channel, file, funcName, line, format, args...)
 }
 
 // ErrorCh writes an error-level log to the given channel.
 func ErrorCh(channel, format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelError) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteLogFmtCh(int(Core.LogLevelError), Core.LogTypeError, -1, channel, file, funcName, line, format, args...)
 }
 
 // FatalCh writes a fatal-level log to the given channel.
 func FatalCh(channel, format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelFatal) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteLogFmtCh(int(Core.LogLevelFatal), Core.LogTypeFatal, -1, channel, file, funcName, line, format, args...)
 }
 
 // MainCh writes a main-type log to the given channel.
 func MainCh(channel, format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelInfo) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteLogFmtCh(int(Core.LogLevelInfo), Core.LogTypeMain, -1, channel, file, funcName, line, format, args...)
 }
 
 // RemoteCh writes a remote log to the given channel.
 func RemoteCh(channel, format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelRemote) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteLogFmtCh(int(Core.LogLevelRemote), Core.LogTypeRemote, -1, channel, file, funcName, line, format, args...)
 }
 
 // SysCh writes a system log to the given channel.
 func SysCh(channel, format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelSys) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteLogFmtCh(int(Core.LogLevelSys), Core.LogTypeSys, -1, channel, file, funcName, line, format, args...)
 }
@@ -244,12 +301,18 @@ func SysCh(channel, format string, args ...any) {
 // TraceWithCaller writes a trace-level log using the explicitly supplied caller
 // location (file, funcName, line) instead of capturing it automatically.
 func TraceWithCaller(file, funcName string, line int, format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelTrace) {
+		return
+	}
 	Logger.GetInstance().WriteLogFmt(int(Core.LogLevelTrace), Core.LogTypeTrace, -1, file, funcName, line, format, args...)
 }
 
 // TraceChWithCaller writes a trace-level log to the given channel using the
 // explicitly supplied caller location (file, funcName, line).
 func TraceChWithCaller(channel, file, funcName string, line int, format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelTrace) {
+		return
+	}
 	Logger.GetInstance().WriteLogFmtCh(int(Core.LogLevelTrace), Core.LogTypeTrace, -1, channel, file, funcName, line, format, args...)
 }
 
@@ -269,6 +332,9 @@ func TraceChWithCaller(channel, file, funcName string, line int, format string, 
 // Scope returns a deferred function that logs function entry now and exit later.
 // It uses runtime.Caller to capture the caller's location automatically.
 func Scope() func() {
+	if !Logger.LevelEnabled(Core.LogLevelTrace) {
+		return func() {}
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteLogFmt(
 		int(Core.LogLevelTrace), Core.LogTypeTrace, -1,
@@ -691,54 +757,81 @@ func SetLayout(eType Core.ELogLayoutType) {
 
 // HexTrace writes a hex dump of data at trace level.
 func HexTrace(data []byte) {
+	if !Logger.LevelEnabled(Core.LogLevelTrace) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteHexLog(int(Core.LogLevelTrace), Core.LogTypeTrace, -1, file, funcName, line, data)
 }
 
 // HexDebug writes a hex dump of data at debug level.
 func HexDebug(data []byte) {
+	if !Logger.LevelEnabled(Core.LogLevelDebug) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteHexLog(int(Core.LogLevelDebug), Core.LogTypeDebug, -1, file, funcName, line, data)
 }
 
 // HexInfo writes a hex dump of data at info level.
 func HexInfo(data []byte) {
+	if !Logger.LevelEnabled(Core.LogLevelInfo) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteHexLog(int(Core.LogLevelInfo), Core.LogTypeInfo, -1, file, funcName, line, data)
 }
 
 // HexWarn writes a hex dump of data at warn level.
 func HexWarn(data []byte) {
+	if !Logger.LevelEnabled(Core.LogLevelWarn) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteHexLog(int(Core.LogLevelWarn), Core.LogTypeWarn, -1, file, funcName, line, data)
 }
 
 // HexError writes a hex dump of data at error level.
 func HexError(data []byte) {
+	if !Logger.LevelEnabled(Core.LogLevelError) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteHexLog(int(Core.LogLevelError), Core.LogTypeError, -1, file, funcName, line, data)
 }
 
 // HexFatal writes a hex dump of data at fatal level.
 func HexFatal(data []byte) {
+	if !Logger.LevelEnabled(Core.LogLevelFatal) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteHexLog(int(Core.LogLevelFatal), Core.LogTypeFatal, -1, file, funcName, line, data)
 }
 
 // HexMain writes a hex dump of data to the main application log.
 func HexMain(data []byte) {
+	if !Logger.LevelEnabled(Core.LogLevelInfo) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteHexLog(int(Core.LogLevelInfo), Core.LogTypeMain, -1, file, funcName, line, data)
 }
 
 // HexRemote writes a hex dump of data to the remote log.
 func HexRemote(data []byte) {
+	if !Logger.LevelEnabled(Core.LogLevelRemote) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteHexLog(int(Core.LogLevelRemote), Core.LogTypeRemote, -1, file, funcName, line, data)
 }
 
 // HexSys writes a hex dump of data to the system event log.
 func HexSys(data []byte) {
+	if !Logger.LevelEnabled(Core.LogLevelSys) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteHexLog(int(Core.LogLevelSys), Core.LogTypeSys, -1, file, funcName, line, data)
 }
@@ -749,54 +842,81 @@ func HexSys(data []byte) {
 
 // HexTraceCh writes a hex dump of data to the channel at trace level.
 func HexTraceCh(channel string, data []byte) {
+	if !Logger.LevelEnabled(Core.LogLevelTrace) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteHexLogCh(int(Core.LogLevelTrace), Core.LogTypeTrace, -1, channel, file, funcName, line, data)
 }
 
 // HexDebugCh writes a hex dump of data to the channel at debug level.
 func HexDebugCh(channel string, data []byte) {
+	if !Logger.LevelEnabled(Core.LogLevelDebug) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteHexLogCh(int(Core.LogLevelDebug), Core.LogTypeDebug, -1, channel, file, funcName, line, data)
 }
 
 // HexInfoCh writes a hex dump of data to the channel at info level.
 func HexInfoCh(channel string, data []byte) {
+	if !Logger.LevelEnabled(Core.LogLevelInfo) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteHexLogCh(int(Core.LogLevelInfo), Core.LogTypeInfo, -1, channel, file, funcName, line, data)
 }
 
 // HexWarnCh writes a hex dump of data to the channel at warn level.
 func HexWarnCh(channel string, data []byte) {
+	if !Logger.LevelEnabled(Core.LogLevelWarn) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteHexLogCh(int(Core.LogLevelWarn), Core.LogTypeWarn, -1, channel, file, funcName, line, data)
 }
 
 // HexErrorCh writes a hex dump of data to the channel at error level.
 func HexErrorCh(channel string, data []byte) {
+	if !Logger.LevelEnabled(Core.LogLevelError) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteHexLogCh(int(Core.LogLevelError), Core.LogTypeError, -1, channel, file, funcName, line, data)
 }
 
 // HexFatalCh writes a hex dump of data to the channel at fatal level.
 func HexFatalCh(channel string, data []byte) {
+	if !Logger.LevelEnabled(Core.LogLevelFatal) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteHexLogCh(int(Core.LogLevelFatal), Core.LogTypeFatal, -1, channel, file, funcName, line, data)
 }
 
 // HexMainCh writes a hex dump of data to the channel on the main log.
 func HexMainCh(channel string, data []byte) {
+	if !Logger.LevelEnabled(Core.LogLevelInfo) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteHexLogCh(int(Core.LogLevelInfo), Core.LogTypeMain, -1, channel, file, funcName, line, data)
 }
 
 // HexRemoteCh writes a hex dump of data to the channel on the remote log.
 func HexRemoteCh(channel string, data []byte) {
+	if !Logger.LevelEnabled(Core.LogLevelRemote) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteHexLogCh(int(Core.LogLevelRemote), Core.LogTypeRemote, -1, channel, file, funcName, line, data)
 }
 
 // HexSysCh writes a hex dump of data to the channel on the system log.
 func HexSysCh(channel string, data []byte) {
+	if !Logger.LevelEnabled(Core.LogLevelSys) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteHexLogCh(int(Core.LogLevelSys), Core.LogTypeSys, -1, channel, file, funcName, line, data)
 }
@@ -810,54 +930,81 @@ func HexSysCh(channel string, data []byte) {
 
 // EscapeTrace writes an escape-formatted trace log.
 func EscapeTrace(format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelTrace) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteEscapeLogFmt(int(Core.LogLevelTrace), Core.LogTypeTrace, -1, file, funcName, line, format, args...)
 }
 
 // EscapeDebug writes an escape-formatted debug log.
 func EscapeDebug(format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelDebug) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteEscapeLogFmt(int(Core.LogLevelDebug), Core.LogTypeDebug, -1, file, funcName, line, format, args...)
 }
 
 // EscapeInfo writes an escape-formatted info log.
 func EscapeInfo(format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelInfo) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteEscapeLogFmt(int(Core.LogLevelInfo), Core.LogTypeInfo, -1, file, funcName, line, format, args...)
 }
 
 // EscapeWarn writes an escape-formatted warn log.
 func EscapeWarn(format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelWarn) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteEscapeLogFmt(int(Core.LogLevelWarn), Core.LogTypeWarn, -1, file, funcName, line, format, args...)
 }
 
 // EscapeError writes an escape-formatted error log.
 func EscapeError(format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelError) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteEscapeLogFmt(int(Core.LogLevelError), Core.LogTypeError, -1, file, funcName, line, format, args...)
 }
 
 // EscapeFatal writes an escape-formatted fatal log.
 func EscapeFatal(format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelFatal) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteEscapeLogFmt(int(Core.LogLevelFatal), Core.LogTypeFatal, -1, file, funcName, line, format, args...)
 }
 
 // EscapeMain writes an escape-formatted log message to the main application log.
 func EscapeMain(format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelInfo) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteEscapeLogFmt(int(Core.LogLevelInfo), Core.LogTypeMain, -1, file, funcName, line, format, args...)
 }
 
 // EscapeRemote writes an escape-formatted log message to the remote log.
 func EscapeRemote(format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelRemote) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteEscapeLogFmt(int(Core.LogLevelRemote), Core.LogTypeRemote, -1, file, funcName, line, format, args...)
 }
 
 // EscapeSys writes an escape-formatted log message to the system event log.
 func EscapeSys(format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelSys) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteEscapeLogFmt(int(Core.LogLevelSys), Core.LogTypeSys, -1, file, funcName, line, format, args...)
 }
@@ -868,54 +1015,81 @@ func EscapeSys(format string, args ...any) {
 
 // EscapeTraceCh writes an escape-formatted trace log to the channel.
 func EscapeTraceCh(channel, format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelTrace) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteEscapeLogFmtCh(int(Core.LogLevelTrace), Core.LogTypeTrace, -1, channel, file, funcName, line, format, args...)
 }
 
 // EscapeDebugCh writes an escape-formatted debug log to the channel.
 func EscapeDebugCh(channel, format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelDebug) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteEscapeLogFmtCh(int(Core.LogLevelDebug), Core.LogTypeDebug, -1, channel, file, funcName, line, format, args...)
 }
 
 // EscapeInfoCh writes an escape-formatted info log to the channel.
 func EscapeInfoCh(channel, format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelInfo) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteEscapeLogFmtCh(int(Core.LogLevelInfo), Core.LogTypeInfo, -1, channel, file, funcName, line, format, args...)
 }
 
 // EscapeWarnCh writes an escape-formatted warn log to the channel.
 func EscapeWarnCh(channel, format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelWarn) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteEscapeLogFmtCh(int(Core.LogLevelWarn), Core.LogTypeWarn, -1, channel, file, funcName, line, format, args...)
 }
 
 // EscapeErrorCh writes an escape-formatted error log to the channel.
 func EscapeErrorCh(channel, format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelError) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteEscapeLogFmtCh(int(Core.LogLevelError), Core.LogTypeError, -1, channel, file, funcName, line, format, args...)
 }
 
 // EscapeFatalCh writes an escape-formatted fatal log to the channel.
 func EscapeFatalCh(channel, format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelFatal) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteEscapeLogFmtCh(int(Core.LogLevelFatal), Core.LogTypeFatal, -1, channel, file, funcName, line, format, args...)
 }
 
 // EscapeMainCh writes an escape-formatted log message to the channel on the main log.
 func EscapeMainCh(channel, format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelInfo) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteEscapeLogFmtCh(int(Core.LogLevelInfo), Core.LogTypeMain, -1, channel, file, funcName, line, format, args...)
 }
 
 // EscapeRemoteCh writes an escape-formatted log message to the channel on the remote log.
 func EscapeRemoteCh(channel, format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelRemote) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteEscapeLogFmtCh(int(Core.LogLevelRemote), Core.LogTypeRemote, -1, channel, file, funcName, line, format, args...)
 }
 
 // EscapeSysCh writes an escape-formatted log message to the channel on the system log.
 func EscapeSysCh(channel, format string, args ...any) {
+	if !Logger.LevelEnabled(Core.LogLevelSys) {
+		return
+	}
 	file, funcName, line := apiCallerInfo(1)
 	Logger.GetInstance().WriteEscapeLogFmtCh(int(Core.LogLevelSys), Core.LogTypeSys, -1, channel, file, funcName, line, format, args...)
 }
