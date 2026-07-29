@@ -109,6 +109,7 @@ const (
 	LogLayoutTypeBuildin3 = Core.LogLayoutTypeBuildin3
 	LogLayoutTypeBuildin4 = Core.LogLayoutTypeBuildin4
 	LogLayoutTypeBuildin5 = Core.LogLayoutTypeBuildin5
+	LogLayoutTypeBuildin6 = Core.LogLayoutTypeBuildin6
 
 	LogFilterAll             = Core.LogFilterAll
 	LogFilterWarnsAndErrors = Core.LogFilterWarnsAndErrors
@@ -249,6 +250,10 @@ func ClearConsole() {
 
 func NewCYLoggerTemplateLayoutCustom(inner Layout.ICYLoggerTemplateLayout) *Layout.CYLoggerTemplateLayoutCustom {
 	return Layout.NewCYLoggerTemplateLayoutCustom(inner)
+}
+
+func NewCYLoggerTemplateLayout6() *Layout.CYLoggerTemplateLayout6 {
+	return Layout.NewCYLoggerTemplateLayout6()
 }
 func GetCYLoggerTemplateLayoutManagerInstance() *Layout.CYLoggerTemplateLayoutManager {
 	return Layout.GetCYLoggerTemplateLayoutManagerInstance()

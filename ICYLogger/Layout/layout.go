@@ -642,6 +642,106 @@ func (l *CYLoggerTemplateLayout5) typeName(e Core.ELogType) string {
 	return layoutTypeCode(e)
 }
 
+// CYLoggerTemplateLayout6 is the retrieval-preferred layout. It mirrors
+// Buildin4 ([Time][TYPE|P:pid|T:tid][func(line)] Msg) but renders the channel
+// as a bare [name] bracket placed BEFORE [func(line)] instead of after it:
+//
+//	[Time][TYPE|P:pid|T:tid][channel][func(line)] Msg
+//
+// This matches the retrieval project's required log format where the channel
+// (e.g. [FLOW]) leads the func/line bracket so a subsystem's channel is visible
+// before the caller location.
+type CYLoggerTemplateLayout6 struct {
+	CYLoggerTemplateLayoutEscape
+	escape *Filter.ICYLoggerPatternFilter
+}
+
+func NewCYLoggerTemplateLayout6() *CYLoggerTemplateLayout6 {
+	return &CYLoggerTemplateLayout6{}
+}
+
+func (l *CYLoggerTemplateLayout6) SetFilter(f *Filter.ICYLoggerPatternFilter) {
+	l.escape = f
+}
+
+func (l *CYLoggerTemplateLayout6) GetTypeIndex() int32 { return 6 }
+
+func (l *CYLoggerTemplateLayout6) GetTimeStamps(nYY, nMM, nDD, nHR, nMN, nSC, nMMN int) string {
+	return fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d.%03d", nYY, nMM, nDD, nHR, nMN, nSC, nMMN)
+}
+
+func (l *CYLoggerTemplateLayout6) GetFormatMessage(strChannel string, eMsgType Core.ELogType, nSeverCode int,
+	strMsg, strFile, strFunction string,
+	nLine int, nProcessId, nThreadId uint64,
+	nYY, nMM, nDD, nHR, nMN, nSC, nMMN int,
+	bEscape bool) string {
+
+	sb := builderPool.Get().(*strings.Builder)
+	sb.Reset()
+	sb.Grow(256)
+	hs := Common.LogHeaderStart
+	he := Common.LogHeaderEnd
+	fv := Common.LogFieldValueEnd
+	fn := Common.LogFieldNameEnd
+	ev := Common.LogExtensionFieldValueEnd
+
+	// [Time]
+	sb.WriteRune(hs)
+	appendTimestamp(sb, nYY, nMM, nDD, nHR, nMN, nSC, nMMN)
+	sb.WriteRune(he)
+
+	// [Type[:SeverCode]|P:pid|T:tid]
+	sb.WriteRune(hs)
+	sb.WriteString(layoutTypeCode(eMsgType))
+	if nSeverCode >= 0 {
+		sb.WriteRune(':')
+		appendInt(sb, nSeverCode)
+	}
+	sb.WriteRune(fv)
+	sb.WriteString("P:")
+	appendUint(sb, nProcessId)
+	sb.WriteRune(fv)
+	sb.WriteString("T:")
+	appendUint(sb, nThreadId)
+	sb.WriteRune(he)
+
+	// [Key=Value#...] (extension field)
+	if bEscape && l.escape != nil {
+		if ext := l.escape.FilterRequest(&strMsg, l.GetDelimiters(), l.GetEscapeChar(), fn, ev); ext != "" {
+			sb.WriteRune(hs)
+			sb.WriteString(ext)
+			sb.WriteRune(he)
+		}
+	}
+
+	// [channel] — rendered BEFORE [func(line)] so the subsystem channel leads
+	// the caller location (this is the retrieval-required ordering).
+	if strChannel != "" {
+		sb.WriteRune(hs)
+		sb.WriteString(strChannel)
+		sb.WriteRune(he)
+	}
+
+	// [func(line)]
+	sb.WriteRune(hs)
+	sb.WriteString(strFunction)
+	sb.WriteRune('(')
+	appendInt(sb, nLine)
+	sb.WriteRune(')')
+	sb.WriteRune(he)
+	sb.WriteRune(' ')
+
+	sb.WriteString(strMsg)
+	sb.WriteString("\n")
+	out := sb.String()
+	builderPool.Put(sb)
+	return out
+}
+
+func (l *CYLoggerTemplateLayout6) typeName(e Core.ELogType) string {
+	return layoutTypeCode(e)
+}
+
 // CYLoggerTemplateLayoutCustom wraps a user-provided layout.
 type CYLoggerTemplateLayoutCustom struct {
 	CYLoggerTemplateLayoutEscape
@@ -713,6 +813,7 @@ func GetCYLoggerTemplateLayoutManagerInstance() *CYLoggerTemplateLayoutManager {
 		m.layouts[3] = NewCYLoggerTemplateLayout3()
 		m.layouts[4] = NewCYLoggerTemplateLayout4()
 		m.layouts[5] = NewCYLoggerTemplateLayout5()
+		m.layouts[6] = NewCYLoggerTemplateLayout6()
 		m.default_ = m.layouts[1]
 		g_CYLoggerTemplateLayoutManagerInstance = m
 	})

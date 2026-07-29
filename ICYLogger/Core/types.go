@@ -92,7 +92,12 @@ const (
 	LogLayoutTypeBuildin2 ELogLayoutType = 2
 	LogLayoutTypeBuildin3 ELogLayoutType = 3
 	LogLayoutTypeBuildin4 ELogLayoutType = 4 // [Time][TYPE|P:pid|T:tid][func(line)] Msg
-	LogLayoutTypeBuildin5 ELogLayoutType = 5
+	LogLayoutTypeBuildin5 ELogLayoutType = 5 // [Time][TYPE|P:pid|T:tid][CH:channel][func(line)] Msg
+	// LogLayoutTypeBuildin6 is the retrieval-preferred layout: like Buildin4 but
+	// the channel is rendered as a bare [name] bracket placed BEFORE [func(line)]
+	// (Buildin4 puts [func(line)] before the channel). Output:
+	//   [Time][TYPE|P:pid|T:tid][channel][func(line)] Msg
+	LogLayoutTypeBuildin6 ELogLayoutType = 6
 )
 
 // STStatistics holds logging statistics counters (fully aligned with C++ CYLogger).
