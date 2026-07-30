@@ -461,6 +461,17 @@ func (c *CYLoggerClearLogFile) StartSchedule() {
 			}
 		}
 	}()
+
+	// Run an immediate first-pass cleanup so stale / excess log files are pruned
+	// right after Init instead of waiting a full nClearPeriodSec for the first
+	// ticker tick. This matches the documented "first-process" cleanup intent
+	// (bFirstProcess) and — crucially — means short-lived processes (e.g. a
+	// build-time verification that starts the server for only a few seconds)
+	// still prune old files rather than leaving them behind forever.
+	// DoClear is guarded by runMu, so this never races with the ticker goroutine;
+	// it is a no-op when the policy is disabled (bEnable=false) or the log
+	// directory is empty.
+	go c.DoClear()
 }
 
 // StopSchedule signals the background cleanup goroutine to exit and BLOCKS
