@@ -206,10 +206,14 @@ func (c *CYLoggerControl) Init(szLogPath string, bShowConsole, bWriteRemote, bWr
 		cfg.GetCheckFileSize(), cfg.GetCountPerType(),
 		cfg.GetCheckFileTypeSize(), cfg.GetCheckAllFileSize())
 
-	if c.schedule == nil {
-		c.schedule = Schedule.GetCYLoggerScheduleInstance()
-		c.schedule.Init(szLogPath, cfg.GetTimeExpiredFile())
-	}
+	// The schedule is a process-wide singleton that survives UnInit, so always
+	// (re-)initialize it on every Init. CYLoggerSchedule.Init resets the
+	// first-process marker and last-check timestamps when the clear task already
+	// exists, which is what makes a re-Init (e.g. tests, or reloading logging
+	// config in the same process) prune excess files immediately instead of
+	// waiting for stale elapsed windows inherited from the previous Init.
+	c.schedule = Schedule.GetCYLoggerScheduleInstance()
+	c.schedule.Init(szLogPath, cfg.GetTimeExpiredFile())
 	// The schedule singleton (and its clear task) survives UnInit, so the
 	// per-Init settings must be re-asserted on every Init — otherwise a
 	// re-Init in the same process keeps cleaning the PREVIOUS log directory

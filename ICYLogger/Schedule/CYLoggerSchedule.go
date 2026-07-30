@@ -550,6 +550,16 @@ func (s *CYLoggerSchedule) Init(szLogDir string, nExpiredHours int) {
 	if s.clearTask == nil {
 		s.clearTask = NewCYLoggerClearLogFile(szLogDir, nExpiredHours)
 		s.clearTask.SetEnable(s.bEnable)
+	} else {
+		// Re-Initializing (e.g. a second InitDefaultWithOpts in the same process):
+		// reset the first-process marker and last-check timestamps so the per-type
+		// count/size policies run on the NEXT cleanup pass instead of waiting for
+		// the (stale) elapsed windows carried over from the previous Init. Without
+		// this, the count cleanup is silently skipped until the window elapses and
+		// excess files are never pruned after a re-Init.
+		s.clearTask.bFirstProcess = true
+		s.clearTask.lastCountCheck = time.Now()
+		s.clearTask.lastSizeCheck = time.Now()
 	}
 	if s.zipTask == nil {
 		s.zipTask = NewCYLoggerDoZipLog()
