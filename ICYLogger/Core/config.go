@@ -389,6 +389,98 @@ func (c *CYLoggerConfig) SetRestriction(bEnable, bClear bool,
 	}
 }
 
+// =============================================================================
+// Semantic restriction setters
+//
+// SetRestriction mirrors the C++ CYLoggerImpl::SetRestriction 10-parameter
+// signature. That ordering is error-prone (e.g. the per-type file cap is the
+// 8th argument, nCount), which makes callers routinely misuse it — most
+// notably the 5-argument form historically copied from older code fails to
+// compile on this version. The setters below expose each knob individually so
+// callers can tune only what they need without memorizing the 10-arg order.
+// =============================================================================
+
+// SetRestrictionEnabled toggles the whole file rotation/restriction policy.
+func (c *CYLoggerConfig) SetRestrictionEnabled(b bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.bLimitEnable = b
+}
+
+// SetClearOldFiles toggles pruning of unrecognized/old log files at startup.
+func (c *CYLoggerConfig) SetClearOldFiles(b bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.bClearUnLogFile = b
+}
+
+// SetExpiredHours sets the expired-file retention window (hours). Files older
+// than this become eligible for background cleanup.
+func (c *CYLoggerConfig) SetExpiredHours(nHours int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if nHours > 0 {
+		c.nLimitTimeExpiredFile = nHours
+	}
+}
+
+// SetCheckFileSizeTime sets the size-check interval (seconds).
+func (c *CYLoggerConfig) SetCheckFileSizeTime(nSec int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if nSec > 0 {
+		c.nCheckFileSizeTime = nSec
+	}
+}
+
+// SetCheckFileCountTime sets the count-check interval (seconds).
+func (c *CYLoggerConfig) SetCheckFileCountTime(nSec int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if nSec > 0 {
+		c.nCheckFileCountTime = nSec
+	}
+}
+
+// SetCheckFileSize sets the per-file size threshold (bytes).
+func (c *CYLoggerConfig) SetCheckFileSize(nBytes int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if nBytes > 0 {
+		c.nCheckFileSize = nBytes
+	}
+}
+
+// SetCountPerType sets the maximum number of rotated files kept per log type.
+// Older files beyond this count are pruned by the background cleanup goroutine
+// (DoClear), keeping the newest N. This is the knob most callers actually want
+// and corresponds to the 8th argument (nCount) of SetRestriction.
+func (c *CYLoggerConfig) SetCountPerType(n int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if n > 0 {
+		c.nCountPerType = n
+	}
+}
+
+// SetCheckFileTypeSize sets the per-type total log size threshold (bytes).
+func (c *CYLoggerConfig) SetCheckFileTypeSize(nBytes int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if nBytes > 0 {
+		c.nCheckFileTypeSize = nBytes
+	}
+}
+
+// SetCheckAllFileSize sets the total log size threshold across all types (bytes).
+func (c *CYLoggerConfig) SetCheckAllFileSize(nBytes int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if nBytes > 0 {
+		c.nCheckAllFileSize = nBytes
+	}
+}
+
 // IsLimitEnable returns whether file-size checking is enabled.
 func (c *CYLoggerConfig) IsLimitEnable() bool {
 	c.mu.RLock()

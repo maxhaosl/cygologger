@@ -467,6 +467,56 @@ func WithClearPeriodSec(n int) Option {
 	return func(c *Core.CYLoggerConfig) { c.SetClearPeriodSec(n) }
 }
 
+// =============================================================================
+// Semantic restriction options
+//
+// These wrap the individual Core.CYLoggerConfig setters so callers can tune the
+// file rotation/restriction policy without the error-prone 10-argument
+// WithRestriction (whose per-type file cap is the 8th argument, nCount). Prefer
+// these for any new code; WithRestriction is retained only for full-control and
+// backward compatibility.
+// =============================================================================
+
+// WithMaxFilesPerType sets the maximum number of rotated files kept per log
+// type. When a type accumulates more files than this, the background cleanup
+// goroutine (DoClear) prunes the oldest ones, keeping the newest N. This is the
+// single most commonly tuned knob and replaces the confusing nCount argument of
+// WithRestriction. Default: Core.DefaultLogCountPerType (20).
+func WithMaxFilesPerType(n int) Option {
+	return func(c *Core.CYLoggerConfig) { c.SetCountPerType(n) }
+}
+
+// WithRestrictionEnabled toggles the whole file rotation/restriction policy on
+// or off. Corresponds to the first argument (bEnable) of WithRestriction.
+func WithRestrictionEnabled(b bool) Option {
+	return func(c *Core.CYLoggerConfig) { c.SetRestrictionEnabled(b) }
+}
+
+// WithClearOldFiles toggles pruning of unrecognized/old log files at startup.
+// Corresponds to the second argument (bClear) of WithRestriction.
+func WithClearOldFiles(b bool) Option {
+	return func(c *Core.CYLoggerConfig) { c.SetClearOldFiles(b) }
+}
+
+// WithExpiredHours sets the expired-file retention window (hours). Files older
+// than this become eligible for background cleanup. Corresponds to the 4th
+// argument (nTimeExpired) of WithRestriction.
+func WithExpiredHours(nHours int) Option {
+	return func(c *Core.CYLoggerConfig) { c.SetExpiredHours(nHours) }
+}
+
+// WithTypeSizeLimit sets the per-type total log size threshold (bytes).
+// Corresponds to the 9th argument (nTypeSize) of WithRestriction.
+func WithTypeSizeLimit(nBytes int) Option {
+	return func(c *Core.CYLoggerConfig) { c.SetCheckFileTypeSize(nBytes) }
+}
+
+// WithAllSizeLimit sets the total log size threshold across all types (bytes).
+// Corresponds to the 10th argument (nAllSize) of WithRestriction.
+func WithAllSizeLimit(nBytes int) Option {
+	return func(c *Core.CYLoggerConfig) { c.SetCheckAllFileSize(nBytes) }
+}
+
 // WithErrorLogPath sets the dedicated error log file path. A bare file name is
 // resolved against the configured log directory.
 func WithErrorLogPath(p string) Option {
