@@ -326,20 +326,31 @@ func (c *CYLoggerClearLogFile) DoClear() {
 	c.mu.Unlock()
 }
 
-// enumerateNonLogFiles recursively lists all files under dir that are NOT .log
-// files (mirroring C++ EnumNotLogFile).
+// enumerateNonLogFiles lists non-.log files that are DIRECT children of dir
+// (NOT recursing into subdirectories, mirroring C++ EnumNotLogFile which only
+// ever scans the configured log directory itself). This is critical when the
+// log directory contains per-process subdirectories (e.g. a worker pool where
+// each worker writes to <logDir>/<workerID>/): a recursive walk would enumerate
+// files belonging to OTHER processes and — because DoClear cleans by logical
+// log type across the whole tree — could delete or mis-count files owned by
+// sibling workers / the parent process. Each process therefore only ever sees
+// and prunes its OWN directory's direct children.
 func (c *CYLoggerClearLogFile) enumerateNonLogFiles(dir string) []string {
 	var result []string
-	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return result
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
 		}
-		if info.IsDir() || strings.HasSuffix(path, ".log") {
-			return nil
+		p := filepath.Join(dir, e.Name())
+		if strings.HasSuffix(p, ".log") {
+			continue
 		}
-		result = append(result, path)
-		return nil
-	})
+		result = append(result, p)
+	}
 	return result
 }
 
@@ -376,19 +387,35 @@ func (c *CYLoggerClearLogFile) collectInUseFiles() map[string]bool {
 	return used
 }
 
-// enumerateLogFiles recursively lists all .log files under dir.
+// enumerateLogFiles lists the .log files that are DIRECT children of dir, NOT
+// recursing into subdirectories. This is the core fix for cross-directory
+// mis-counting: when the configured log directory contains per-process
+// subdirectories (e.g. <logDir>/worker-0/, <logDir>/server/), a recursive walk
+// would gather every sibling process's files into the SAME per-type group and
+// then delete the oldest across ALL of them — so one process could prune
+// another's active log files and the per-type file-count limit would be applied
+// to the union of all processes instead of each process independently. By only
+// ever scanning direct children, each process cleans exactly its own files and
+// the per-type count limit (nFileCountPerType) is enforced per-process.
+//
+// Historically this used filepath.Walk (fully recursive), which was the root
+// cause of "server log files deleted / worker dirs cleaned wrong" reports.
 func (c *CYLoggerClearLogFile) enumerateLogFiles(dir string) []string {
 	var result []string
-	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return result
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
 		}
-		if info.IsDir() || !strings.HasSuffix(path, ".log") {
-			return nil
+		name := e.Name()
+		if !strings.HasSuffix(name, ".log") {
+			continue
 		}
-		result = append(result, path)
-		return nil
-	})
+		result = append(result, filepath.Join(dir, name))
+	}
 	return result
 }
 

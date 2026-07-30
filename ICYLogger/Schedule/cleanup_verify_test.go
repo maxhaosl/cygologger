@@ -274,3 +274,61 @@ func TestCleanupIntervalGating(t *testing.T) {
 		t.Fatalf("after interval elapsed expected 2, got %d", got)
 	}
 }
+
+// TestCleanupIgnoresSubdirectories is a regression test for the cross-directory
+// mis-counting bug: when the configured log directory contains per-process
+// subdirectories (e.g. <logDir>/worker-0/, <logDir>/server/), DoClear must only
+// ever enumerate the DIRECT .log children of its own directory and must never
+// recurse into subdirectories. Otherwise files owned by sibling processes would
+// be aggregated into the same per-type group and the count limit applied to the
+// union — causing one process to delete another's (or the parent's) log files.
+func TestCleanupIgnoresSubdirectories(t *testing.T) {
+	dir := t.TempDir()
+
+	// Files directly in the log dir: 7 Error files (limit is 5).
+	base := time.Now()
+	for i := 0; i < 7; i++ {
+		p := filepath.Join(dir, "Error_"+pad2(i)+".log")
+		writeFile(t, p, []byte("parent"), base.Add(time.Duration(i)*time.Minute))
+	}
+	// A sibling worker subdirectory with its OWN 7 Error files — these must be
+	// COMPLETELY invisible to this process's cleanup (count stays 7, not 14).
+	sub := filepath.Join(dir, "worker-0")
+	if err := os.MkdirAll(sub, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 7; i++ {
+		p := filepath.Join(sub, "Error_"+pad2(i)+".log")
+		writeFile(t, p, []byte("child"), base.Add(time.Duration(i)*time.Minute))
+	}
+
+	cl := NewCYLoggerClearLogFile(dir, Core.DefaultLogTimeExpiredFile)
+	cl.SetRestriction(5, 500*1024*1024, 1024*1024*1024) // count limit 5
+	cl.SetClearUnLogFile(false)
+	cl.DoClear()
+
+	// Parent dir: 7 files, count limit 5 -> keep newest 5, delete oldest 2.
+	// Count ONLY direct children (the cleanup must not have touched the sibling
+	// subdirectory, so we must not recurse here either or we'd mis-count).
+	parentErr := 0
+	parentEnts, _ := os.ReadDir(dir)
+	for _, e := range parentEnts {
+		if !e.IsDir() && strings.HasPrefix(e.Name(), "Error_") && strings.HasSuffix(e.Name(), ".log") {
+			parentErr++
+		}
+	}
+	if parentErr != 5 {
+		t.Fatalf("parent Error files: expected 5 after count limit, got %d", parentErr)
+	}
+	// Sibling subdir: ALL 7 Error files must be untouched (not enumerated).
+	subGot := 0
+	_ = filepath.Walk(sub, func(p string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() && strings.HasPrefix(filepath.Base(p), "Error_") {
+			subGot++
+		}
+		return nil
+	})
+	if subGot != 7 {
+		t.Fatalf("sibling subdirectory Error files must be untouched, got %d (expected 7)", subGot)
+	}
+}
